@@ -41,6 +41,8 @@
     "ag-grid-react": "^31.2.0",
     "apollo-upload-client": "^17.0.0",
     "axios": "^1.2.2",
+    "body-parser": "^1.20.2",
+    "clsx": "^2.1.1",
     "core-js-pure": "^3.33.1",
     "dagre": "^0.8.5",
     "eslint-config-next": "13.1.1",

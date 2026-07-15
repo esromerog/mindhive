@@ -20,6 +20,7 @@ const Shell = styled.div`
   flex-direction: column;
   gap: 32px;
   padding: 32px clamp(16px, 6vw, 64px);
+  padding-top: 0px;
   background-color: #f7f9f8;
   min-height: 100vh;
   border-radius: 32px 0 0 32px;
@@ -52,7 +53,7 @@ const TabRow = styled.div`
     border: 1px solid #d3dae0;
     background: #ffffff;
     color: #336f8a;
-    font-family: "Nunito", sans-serif;
+    font-family: "Inter", sans-serif;
     font-weight: 600;
     font-size: 14px;
     text-decoration: none;
@@ -81,18 +82,26 @@ const Empty = styled.div`
 
 const REVIEW_STATUS_KEYS = {
   pending_review: "pendingReview",
+  returned: "returned",
   pre_selected: "preSelected",
   accepted: "accepted",
 };
 
 const REVIEW_STATUS_DEFAULTS = {
   pending_review: "Submitted for review",
+  returned: "Returned",
   pre_selected: "Pre-selected",
   accepted: "Accepted",
 };
 
 function collectReviewerNetworkIds(me) {
   const ids = new Set();
+  (me?.classNetworksCreated || []).forEach((network) => {
+    if (network?.id) ids.add(network.id);
+  });
+  (me?.adminOfClassNetworks || []).forEach((network) => {
+    if (network?.id) ids.add(network.id);
+  });
   const groups = [me?.studentIn || [], me?.mentorIn || [], me?.teacherIn || []];
   groups.forEach((classes) => {
     classes.forEach((cls) => {

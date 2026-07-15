@@ -66,6 +66,14 @@ export const CURRENT_USER_QUERY = gql`
         mentorIn {
           id
         }
+        classNetworksCreated {
+          id
+          title
+        }
+        adminOfClassNetworks {
+          id
+          title
+        }
         memberOfClassNetworks {
           id
           title
@@ -416,6 +424,7 @@ export const PUBLIC_USER_QUERY = gql`
       bio
       location
       organization
+      department
       tagline
       introVideo
       introVideoFile {
@@ -439,6 +448,14 @@ export const PUBLIC_USER_QUERY = gql`
         title
         slug
         description
+      }
+      organizations {
+        id
+        name
+        tagline
+        logo {
+          url
+        }
       }
     }
   }
