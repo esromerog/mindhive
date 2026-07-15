@@ -232,11 +232,13 @@ export default function ProfilePage({ query, user }) {
           </Tabs>
 
           <VideoSection>
-            {profile?.introVideo?.filename ? (
+            {profile?.introVideoFile?.url || profile?.introVideo?.filename ? (
               <VideoPlayer controls>
                 <source
-                  src={`/videos/${profile?.introVideo?.filename}`}
-                  type="video/mp4"
+                  src={
+                    profile?.introVideoFile?.url ||
+                    `/videos/${profile?.introVideo?.filename}`
+                  }
                 />
                 {t("videoNotSupported")}
               </VideoPlayer>

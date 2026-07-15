@@ -19,7 +19,7 @@ For more information, see Working with GIT below.
 3. Run `npm install` in both frontend and keystone folders. If npm complains about dependencies in the frontend folder, use `npm install --legacy-peer-deps`
 4. Set up a local Postgres database (e.g., with the [Postgres app](https://postgresapp.com/)) and enter the URL endpoint as the DATABASE_DEV variable in the file ".env" in the keystone folder.
 5. Go to the keystone folder and run `npm run dev` The server should run on [http://localhost:4444](http://localhost:4444/)
-6. Go to the frontend folder and run `node server.js`. The frontend should run on [http://localhost:3000](http://localhost:3000/)
+6. Go to the frontend folder and run `npm run dev`. The frontend should run on [http://localhost:3000](http://localhost:3000/)
 
 Shield: [![CC BY-NC-ND 4.0][cc-by-nc-nd-shield]][cc-by-nc-nd]
 

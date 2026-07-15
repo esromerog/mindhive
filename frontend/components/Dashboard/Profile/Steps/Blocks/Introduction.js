@@ -38,35 +38,30 @@ export default function IntroductionVideo({ query, user, onDirtyChange }) {
     handleChange(data);
   };
 
-  const onFileUpload = async ({ filename, timestamp }) => {
-    const introVideo = { filename, timestamp };
-    handleChange({
-      target: {
-        name: "introVideo",
-        value: introVideo,
-      },
-    });
-
+  const onFileUpload = async ({ file }) => {
     setVideoSaving(true);
     try {
+      // Keystone stores the file in the profile_videos bucket and serves it
+      // from the backend; GET_PROFILE is refetched so introVideoFile.url
+      // appears on `user` when the mutation resolves.
       await updateProfile({
         variables: {
           id: user?.id,
-          input: { introVideo },
+          input: { introVideoFile: { upload: file } },
         },
       });
     } catch {
       alert(t("videoUploader.error", {}, { default: "Upload failed" }));
-      handleChange({
-        target: {
-          name: "introVideo",
-          value: user?.introVideo || null,
-        },
-      });
     } finally {
       setVideoSaving(false);
     }
   };
+
+  // New uploads live in Keystone storage; older profiles still point at the
+  // legacy frontend-disk path (public/videos, served via /videos/<filename>).
+  const videoSrc =
+    user?.introVideoFile?.url ||
+    (inputs?.introVideo?.filename ? `/videos/${inputs.introVideo.filename}` : null);
 
   async function saveChanges() {
     try {
@@ -94,12 +89,9 @@ export default function IntroductionVideo({ query, user, onDirtyChange }) {
       </div>
       <Divider />
 
-      {inputs?.introVideo?.filename ? (
+      {videoSrc ? (
         <video width="100%" controls>
-          <source
-            src={`/videos/${inputs?.introVideo?.filename}`}
-            type="video/mp4"
-          />
+          <source src={videoSrc} />
           {t("introduction.videoNotSupported")}
         </video>
       ) : (
