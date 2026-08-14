@@ -64,7 +64,8 @@ export default function DevelopMain({ query, user }) {
       }),
   }));
 
-  // Visuals has no builder yet, so its entry points at the (empty) bank.
+  // Visuals are created from the bank's own New Visual button rather than the
+  // shared /develop/new flow, so this entry lands there instead.
   if (userPermissions.includes("ADMIN")) {
     developNewItems.push({
       key: "visual",

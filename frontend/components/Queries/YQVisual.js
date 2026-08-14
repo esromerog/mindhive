@@ -15,7 +15,7 @@ export const MY_VISUALS = gql`
       createdAt
       lastTimeEdited
       cover {
-        publicUrlTransformed(transformation: { width: "600" })
+        url
       }
       author {
         id
@@ -49,7 +49,7 @@ export const VISUAL = gql`
       createdAt
       lastTimeEdited
       cover {
-        publicUrlTransformed(transformation: { width: "600" })
+        url
       }
       code {
         url
@@ -80,12 +80,13 @@ export const VISUAL = gql`
 `;
 
 // Powers the collaborator search in the Settings tab's Editing section.
+//
+// No `mode: insensitive` — this Keystone runs on SQLite, whose Prisma connector
+// doesn't offer the case-insensitive filter, so `StringFilter` has no such field
+// and asking for it fails validation of the whole document.
 export const SEARCH_PROFILES = gql`
   query SEARCH_PROFILES($search: String!) {
-    profiles(
-      where: { username: { contains: $search, mode: insensitive } }
-      take: 8
-    ) {
+    profiles(where: { username: { contains: $search } }, take: 8) {
       id
       username
     }

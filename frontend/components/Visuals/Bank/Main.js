@@ -198,8 +198,8 @@ export default function VisualsBank({ user }) {
                 <div
                   style={{
                     ...COVER_STYLE,
-                    backgroundImage: visual.cover?.publicUrlTransformed
-                      ? `url(${visual.cover.publicUrlTransformed})`
+                    backgroundImage: visual.cover?.url
+                      ? `url(${visual.cover.url})`
                       : undefined,
                   }}
                 />

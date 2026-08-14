@@ -6,7 +6,7 @@ import Navbar, { NavbarItem } from "../../DesignSystem/Navbar";
 import DevelopProjectBank from "../../Projects/Bank/Develop";
 import DevelopStudyBank from "../../Studies/Bank/Develop";
 import DevelopTaskBank from "../../Tasks/Bank/Develop";
-import DevelopVisualsBank from "./Visuals/Main";
+import VisualsBank from "../../Visuals/Bank/Main";
 
 /**
  * The design system's 24px inset suits nav that sits at the window edge; these
@@ -26,7 +26,8 @@ export default function Panels({ query, user }) {
     (permission) => permission?.name
   );
 
-  // Visuals is still a placeholder section, so it stays behind ADMIN for now.
+  // The visuals section is real now, but early — it stays behind ADMIN until
+  // data sources land. Drop this gate to open it up.
   const isAdmin = userPermissions.includes("ADMIN");
 
   // choose default selector for user dependent on user permissions
@@ -108,7 +109,7 @@ export default function Panels({ query, user }) {
         <DevelopTaskBank user={user} taskType="BLOCK" />
       )}
 
-      {isAdmin && selectorForUser == "visuals" && <DevelopVisualsBank />}
+      {isAdmin && selectorForUser == "visuals" && <VisualsBank user={user} />}
     </>
   );
 }

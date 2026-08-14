@@ -379,20 +379,8 @@ export const LinkOffIcon = filledIcon(
   "M17 7h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1 0 1.43-.98 2.63-2.31 2.98l1.46 1.46C20.88 15.61 22 13.95 22 12c0-2.76-2.24-5-5-5zm-1 4h-2.19l2 2H16v-2zM2 4.27l3.11 3.11C3.29 8.12 2 9.91 2 12c0 2.76 2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1 0-1.59 1.21-2.9 2.76-3.07L8.73 11H8v2h2.73L13 15.27V17h1.73l4.01 4L20 19.74 3.27 3 2 4.27z",
 );
 
-/** Favouriting a data source block in the catalog. */
-export const StarIcon = filledIcon(
-  "StarIcon",
-  0,
-  0,
-  "m22 9.24-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z",
-);
-
-export const StarFilledIcon = filledIcon(
-  "StarFilledIcon",
-  0,
-  0,
-  "m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27z",
-);
+// Favouriting a data source block uses StarIcon / StarFilledIcon, defined with
+// the rest of the navigation glyphs above.
 
 export const FullscreenIcon = filledIcon(
   "FullscreenIcon",
