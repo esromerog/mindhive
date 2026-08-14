@@ -104,6 +104,10 @@ export default function MonacoPythonEditor({
   height = 320,
   className,
   readOnly = false,
+  // The visual builder edits p5 sketches through this same editor — the loader
+  // config, self-hosted assets and theme are all worth sharing, and only the
+  // language differs.
+  language = "python",
 }) {
   const beforeMount = useCallback((monaco) => {
     monaco.editor.defineTheme(DATA_JOURNAL_MONACO_THEME, {
@@ -139,7 +143,7 @@ export default function MonacoPythonEditor({
         className={className}
         height={height}
         width="100%"
-        defaultLanguage="python"
+        language={language}
         theme={DATA_JOURNAL_MONACO_THEME}
         value={value}
         onChange={onChange}

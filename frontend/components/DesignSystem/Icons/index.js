@@ -252,3 +252,146 @@ export function ConnectIcon(props) {
     </IconBox>
   );
 }
+
+// ── Visual builder ───────────────────────────────────────────────────────────
+//
+// Material Symbols (outlined) at their native 24x24, so these take no translate
+// offset — unlike the navigation glyphs above, which were exported from Figma
+// frames at their designed size and have to be nudged into the box.
+
+export const ChevronLeftIcon = filledIcon(
+  "ChevronLeftIcon",
+  0,
+  0,
+  "M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z",
+);
+
+export const AddIcon = filledIcon(
+  "AddIcon",
+  0,
+  0,
+  "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+);
+
+export const DeleteIcon = filledIcon(
+  "DeleteIcon",
+  0,
+  0,
+  "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5-1-1h-5l-1 1H5v2h14V4h-3.5z",
+);
+
+export const EditIcon = filledIcon(
+  "EditIcon",
+  0,
+  0,
+  "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z",
+);
+
+export const MoreVertIcon = filledIcon(
+  "MoreVertIcon",
+  0,
+  0,
+  "M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z",
+);
+
+export const InfoIcon = filledIcon(
+  "InfoIcon",
+  0,
+  0,
+  "M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z",
+);
+
+/** The Documentation tab. */
+export const DescriptionIcon = filledIcon(
+  "DescriptionIcon",
+  0,
+  0,
+  "M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z",
+);
+
+/** The Code tab. */
+export const CodeIcon = filledIcon(
+  "CodeIcon",
+  0,
+  0,
+  "M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
+);
+
+/** The Parameters tab, and the per-parameter controls toggle. */
+export const TuneIcon = filledIcon(
+  "TuneIcon",
+  0,
+  0,
+  "M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z",
+);
+
+/**
+ * The Data Source tab, and the liveness indicator on a stream. Rendered flat
+ * when idle and animated when a stream is running — see the `Streaming` chip.
+ */
+export const WaveformIcon = filledIcon(
+  "WaveformIcon",
+  0,
+  0,
+  "M7 18H5V6h2v12zm4 4H9V2h2v20zm4-4h-2V6h2v12zm4-8h-2v4h2v-4zM3 14H1v-4h2v4z",
+);
+
+/** Connecting a device input. */
+export const PlugIcon = filledIcon(
+  "PlugIcon",
+  0,
+  0,
+  "M16.01 7 16 3h-2v4h-4V3H8v4h-.01C7 6.99 6 7.99 6 8.99v5.49L9.5 18v3h5v-3l3.5-3.51v-5.5c0-1-1-2-1.99-1.99z",
+);
+
+/** Releasing a parameter's binding back to manual control. */
+export const LinkOffIcon = filledIcon(
+  "LinkOffIcon",
+  0,
+  0,
+  "M17 7h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1 0 1.43-.98 2.63-2.31 2.98l1.46 1.46C20.88 15.61 22 13.95 22 12c0-2.76-2.24-5-5-5zm-1 4h-2.19l2 2H16v-2zM2 4.27l3.11 3.11C3.29 8.12 2 9.91 2 12c0 2.76 2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1 0-1.59 1.21-2.9 2.76-3.07L8.73 11H8v2h2.73L13 15.27V17h1.73l4.01 4L20 19.74 3.27 3 2 4.27z",
+);
+
+/** Favouriting a data source block in the catalog. */
+export const StarIcon = filledIcon(
+  "StarIcon",
+  0,
+  0,
+  "m22 9.24-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z",
+);
+
+export const StarFilledIcon = filledIcon(
+  "StarFilledIcon",
+  0,
+  0,
+  "m12 17.27 6.18 3.73-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27z",
+);
+
+export const FullscreenIcon = filledIcon(
+  "FullscreenIcon",
+  0,
+  0,
+  "M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z",
+);
+
+export const FullscreenExitIcon = filledIcon(
+  "FullscreenExitIcon",
+  0,
+  0,
+  "M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z",
+);
+
+/** Collapsing the Preview pane; the filled column is the pane being closed. */
+export const SidePanelIcon = filledIcon(
+  "SidePanelIcon",
+  0,
+  0,
+  "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM5 19V5h9v14H5zm14 0h-3V5h3v14z",
+);
+
+export const ShareIcon = filledIcon(
+  "ShareIcon",
+  0,
+  0,
+  "M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92-1.31-2.92-2.92-2.92z",
+);

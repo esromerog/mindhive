@@ -4,6 +4,7 @@ import useTranslation from "next-translate/useTranslation";
 import DevelopProjectBank from "../../Projects/Bank/Develop";
 import DevelopStudyBank from "../../Studies/Bank/Develop";
 import DevelopTaskBank from "../../Tasks/Bank/Develop";
+import VisualsBank from "../../Visuals/Bank/Main";
 
 export default function Panels({ query, user }) {
   const { t } = useTranslation("builder");
@@ -80,6 +81,18 @@ export default function Panels({ query, user }) {
             <p>{t("myBlocks")}</p>
           </div>
         </Link>
+
+        <Link href="/dashboard/develop/visuals">
+          <div
+            className={
+              selectorForUser === "visuals"
+                ? "menuTitle selectedMenuTitle"
+                : "menuTitle"
+            }
+          >
+            <p>{t("myVisuals", "My Visuals")}</p>
+          </div>
+        </Link>
       </div>
 
       {selectorForUser == "projects" && <DevelopProjectBank user={user} />}
@@ -97,6 +110,8 @@ export default function Panels({ query, user }) {
       {selectorForUser == "blocks" && (
         <DevelopTaskBank user={user} taskType="BLOCK" />
       )}
+
+      {selectorForUser == "visuals" && <VisualsBank user={user} />}
     </>
   );
 }
