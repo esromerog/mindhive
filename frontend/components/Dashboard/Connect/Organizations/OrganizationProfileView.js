@@ -3,6 +3,7 @@ import styled from "styled-components";
 import { Icon } from "semantic-ui-react";
 import useTranslation from "next-translate/useTranslation";
 
+import { ReadOnlyTipTap } from "../../../TipTap/ReadOnlyTipTap";
 import { formatDateLabel } from "./utils";
 import OrganizationVerificationStatus from "./OrganizationVerificationStatus";
 
@@ -102,7 +103,7 @@ const Hero = styled.div`
 
   h1 {
     margin: 0;
-    font-family: "Lato", sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: clamp(28px, 4vw, 38px);
     color: #171717;
     display: inline-flex;
@@ -171,7 +172,7 @@ export const Card = styled.div`
 
   h2 {
     margin: 0;
-    font-family: "Lato", sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 18px;
     color: #171717;
   }
@@ -361,17 +362,9 @@ export function OrganizationAboutSection({ organization }) {
       {org.mission ? (
         <Card>
           <h2>{t("organizationsDetail.about", {}, { default: "About" })}</h2>
-          <p
-            style={{
-              margin: 0,
-              color: "#5f6871",
-              fontSize: 14,
-              lineHeight: 1.6,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {org.mission}
-          </p>
+          <ReadOnlyTipTap
+            dangerouslySetInnerHTML={{ __html: org.mission }}
+          />
         </Card>
       ) : null}
       {org.interests?.length > 0 ? (

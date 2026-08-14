@@ -1,8 +1,11 @@
+import { useEffect, useState } from "react";
 import useTranslation from "next-translate/useTranslation";
 import clsx from "clsx";
 
 import Button from "../../DesignSystem/Button";
+import Chip from "../../DesignSystem/Chip";
 import { TYPE_ICONS } from "./TypeIcons";
+import { INTRO_VIDEO_FIELD_NAME } from "./questionUtils";
 import {
   CheckboxRow,
   FieldStack,
@@ -12,6 +15,10 @@ import {
   TypePicker,
   TypeTile,
 } from "./styles";
+
+function hasNonEmptyHelperText(helperText) {
+  return Boolean(String(helperText || "").trim());
+}
 
 export const TYPE_KEYS = [
   {
@@ -42,6 +49,33 @@ export const TYPE_KEYS = [
     hintKey: "opportunities.matchingRound.formWizard.types.tasksHint",
     hintDefault: "Sponsors pick from the public library",
   },
+  {
+    value: "file",
+    labelKey: "opportunities.matchingRound.formWizard.types.introVideo",
+    labelDefault: "Intro video upload",
+    hintKey: "opportunities.matchingRound.formWizard.types.introVideoHint",
+    hintDefault: "Sponsors upload an MP4 / WebM intro video",
+  },
+  {
+    value: "link_list",
+    labelKey: "opportunities.matchingRound.formWizard.types.links",
+    labelDefault: "Links",
+    hintKey: "opportunities.matchingRound.formWizard.types.linksHint",
+    hintDefault: "Sponsors add multiple external links",
+  },
+  {
+    value: "media_asset_list",
+    labelKey: "opportunities.matchingRound.formWizard.types.mediaList",
+    labelDefault: "Media",
+    hintKey: "opportunities.matchingRound.formWizard.types.mediaListHint",
+    hintDefault: "Sponsors upload or pick multiple images/PDFs",
+  },
+];
+
+export const REVIEW_HIDDEN_TYPE_KEYS = [
+  "file",
+  "link_list",
+  "media_asset_list",
 ];
 
 export function effectiveTypeKey(fieldType) {
@@ -65,30 +99,53 @@ export default function QuestionEditor({
   expanded,
   onExpand,
   onCollapse,
+  introVideoTaken = false,
+  hiddenTypeKeys = [],
 }) {
   const { t } = useTranslation("classes");
   const typeKey = effectiveTypeKey(question.fieldType);
   const isOpen = typeKey === "text";
+  const isIntroVideo = question.fieldType === "file";
   const needsOptions =
     question.fieldType === "select" || question.fieldType === "multiselect";
   const typeLabel = typeLabelFor(question.fieldType, t);
   const typeChosen = !!question.typeChosen;
+  const visibleTypeKeys = TYPE_KEYS.filter(
+    (type) => !hiddenTypeKeys.includes(type.value)
+  );
   const promptSummary =
     String(question.label || "").trim() ||
     t("opportunities.matchingRound.formWizard.promptEmpty", {}, {
       default: "No prompt yet",
     });
+  // Opt-in: helper textarea stays hidden until Add, or when existing text is loaded.
+  const [helperEditorOpen, setHelperEditorOpen] = useState(() =>
+    hasNonEmptyHelperText(question.helperText),
+  );
+  useEffect(() => {
+    setHelperEditorOpen(hasNonEmptyHelperText(question.helperText));
+  }, [question.localId]);
 
   const setType = (next) => {
+    if (next === "file" && introVideoTaken && !isIntroVideo) {
+      return;
+    }
     if (next === "text") {
       onChange({
         ...question,
         fieldType: question.fieldType === "textarea" ? "textarea" : "text",
+        name: null,
         typeChosen: true,
       });
       return;
     }
-    onChange({ ...question, fieldType: next, typeChosen: true });
+    onChange({
+      ...question,
+      fieldType: next,
+      // Fixed machine name for the managed Opportunity.videoFile column.
+      name: next === "file" ? INTRO_VIDEO_FIELD_NAME : null,
+      typeChosen: true,
+    });
   };
 
   if (!expanded) {
@@ -170,11 +227,23 @@ export default function QuestionEditor({
           default: "Question type",
         })}
       >
-        {TYPE_KEYS.map((type) => {
+        {visibleTypeKeys.map((type) => {
           const Icon = TYPE_ICONS[type.value];
           const active = typeChosen && typeKey === type.value;
           const label = t(type.labelKey, {}, { default: type.labelDefault });
           const hint = t(type.hintKey, {}, { default: type.hintDefault });
+          const disabled =
+            type.value === "file" && introVideoTaken && !isIntroVideo;
+          const disabledHint = disabled
+            ? t(
+                "opportunities.matchingRound.formWizard.types.introVideoTaken",
+                {},
+                {
+                  default:
+                    "This form already has an intro video upload question.",
+                },
+              )
+            : hint;
           return (
             <TypeTile
               key={type.value}
@@ -183,15 +252,17 @@ export default function QuestionEditor({
               $active={active}
               className={clsx(active && "active")}
               onClick={() => setType(type.value)}
-              title={typeChosen ? `${label} — ${hint}` : hint}
+              disabled={disabled}
+              title={typeChosen ? `${label} — ${disabledHint}` : disabledHint}
               aria-pressed={active}
               aria-label={label}
+              aria-disabled={disabled}
             >
               {Icon ? <Icon className="type-icon" /> : null}
               {!typeChosen ? (
                 <>
                   <span className="type-label">{label}</span>
-                  <span className="type-hint">{hint}</span>
+                  <span className="type-hint">{disabledHint}</span>
                 </>
               ) : null}
             </TypeTile>
@@ -211,11 +282,98 @@ export default function QuestionEditor({
               type="text"
               value={question.label}
               onChange={(e) => onChange({ ...question, label: e.target.value })}
-              placeholder={t("opportunities.matchingRound.formWizard.promptPlaceholder", {}, {
-                default: "What do you want to ask?",
-              })}
+              placeholder={
+                isIntroVideo
+                  ? t(
+                      "opportunities.matchingRound.formWizard.introVideoPromptPlaceholder",
+                      {},
+                      {
+                        default: "e.g. Upload a short intro video for students",
+                      },
+                    )
+                  : t(
+                      "opportunities.matchingRound.formWizard.promptPlaceholder",
+                      {},
+                      {
+                        default: "What do you want to ask?",
+                      },
+                    )
+              }
             />
           </FieldStack>
+          {helperEditorOpen ? (
+            <FieldStack>
+              <label>
+                {t(
+                  "opportunities.matchingRound.formWizard.helperTextLabel",
+                  {},
+                  { default: "Helper text" },
+                )}
+              </label>
+              <textarea
+                value={question.helperText || ""}
+                onChange={(e) =>
+                  onChange({ ...question, helperText: e.target.value })
+                }
+                placeholder={t(
+                  "opportunities.matchingRound.formWizard.helperTextPlaceholder",
+                  {},
+                  {
+                    default: "Extra guidance shown under the question",
+                  },
+                )}
+              />
+              <div>
+                <Chip
+                  type="button"
+                  shape="square"
+                  style={{fontWeight:"400", fontSize:"12px", border:"2px solid var(--MH-Theme-Neutrals-Light,#d3dae0)"}}
+                  leading={<p>–</p>}
+                  onClick={() => {
+                    onChange({ ...question, helperText: "" });
+                    setHelperEditorOpen(false);
+                  }}
+                  label=
+                    {t(
+                      "opportunities.matchingRound.formWizard.helperTextRemove",
+                      {},
+                      { default: "Remove helper text" },
+                    )}
+                >
+                </Chip>
+              </div>
+            </FieldStack>
+          ) : (
+            <div>
+              <Chip
+                type="button"
+                shape="square"
+                style={{fontWeight:"400", fontSize:"12px", border:"2px solid var(--MH-Theme-Neutrals-Light,#d3dae0)"}}
+                leading={<p>+</p>}
+                onClick={() => setHelperEditorOpen(true)}
+                label={t(
+                  "opportunities.matchingRound.formWizard.helperTextAdd",
+                  {},
+                  { default: "Add helper text" },
+                )}
+              >
+              </Chip>
+            </div>
+          )}
+          {isIntroVideo ? (
+            <FieldStack>
+              <span className="field-hint">
+                {t(
+                  "opportunities.matchingRound.formWizard.introVideoHelper",
+                  {},
+                  {
+                    default:
+                      "Sponsors upload an MP4 or WebM (max 500MB). This updates the opportunity’s intro video — no storage settings to configure.",
+                  },
+                )}
+              </span>
+            </FieldStack>
+          ) : null}
 
           {isOpen ? (
             <CheckboxRow>

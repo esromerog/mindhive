@@ -14,6 +14,7 @@ import CopyButton from "../../../../DesignSystem/CopyButton";
 import DropdownMenu from "../../../../DesignSystem/DropdownMenu";
 import DropdownSelect from "../../../../DesignSystem/DropdownSelect";
 import IconButton from "../../../../DesignSystem/IconButton";
+import MessageCard from "../../../../DesignSystem/MessageCard";
 import Modal from "../../../../DesignSystem/Modal";
 import Navbar, { NavbarItem } from "../../../../DesignSystem/Navbar";
 import {
@@ -34,6 +35,7 @@ import {
 import {
   CLONE_FORM_DEFINITION_FOR_CLASS,
   DELETE_FORM_DEFINITION,
+  PUBLISH_FORM_DEFINITION,
 } from "../../../../Mutations/FormDefinition";
 import { UPDATE_OPPORTUNITY } from "../../../../Mutations/Opportunity";
 import {
@@ -558,7 +560,7 @@ function MatchingRoundEditor({
   const { t } = useTranslation("classes");
   const router = useRouter();
   const { origin } = absoluteUrl();
-  const user = useUser();
+  const { user } = useUser();
 
   const roundId = isCreate ? null : roundSummary?.id || null;
   const isNew = !roundId;
@@ -607,7 +609,11 @@ function MatchingRoundEditor({
   const [publicFormsExpanded, setPublicFormsExpanded] = useState(false);
   const [deletingFormId, setDeletingFormId] = useState(null);
   const [cloningPublic, setCloningPublic] = useState(false);
+  const [publishAddForm, setPublishAddForm] = useState(null);
+  const [publishingAdd, setPublishingAdd] = useState(false);
+  const [publishAddError, setPublishAddError] = useState(null);
   const [formsManagerOpen, setFormsManagerOpen] = useState(true);
+  const [formWizardBanner, setFormWizardBanner] = useState(null);
   const formsManagerInitializedRef = useRef(false);
   const savedSnapshotRef = useRef(null);
 
@@ -805,7 +811,14 @@ function MatchingRoundEditor({
       fetchPolicy: "cache-and-network",
     },
   );
-  const pickableFormDefinitions = pickableFormsData?.formDefinitions || [];
+  // Memoised because these lists feed formLabelsById, which the round-context
+  // effect below depends on. A skipped query leaves data undefined, so a bare
+  // `|| []` would hand out a new array every render and republish the context
+  // forever.
+  const pickableFormDefinitions = useMemo(
+    () => pickableFormsData?.formDefinitions || [],
+    [pickableFormsData?.formDefinitions],
+  );
 
   const { data: classLibraryFormsData, refetch: refetchClassLibraryForms } =
     useQuery(CLASS_LIBRARY_FORM_DEFINITIONS, {
@@ -815,8 +828,10 @@ function MatchingRoundEditor({
       skip: !myclass?.id,
       fetchPolicy: "cache-and-network",
     });
-  const classLibraryFormDefinitions =
-    classLibraryFormsData?.formDefinitions || [];
+  const classLibraryFormDefinitions = useMemo(
+    () => classLibraryFormsData?.formDefinitions || [],
+    [classLibraryFormsData?.formDefinitions],
+  );
 
   const { data: publicFormsData, refetch: refetchPublicForms } = useQuery(
     PUBLIC_OPPORTUNITY_FORM_DEFINITIONS,
@@ -825,7 +840,10 @@ function MatchingRoundEditor({
       fetchPolicy: "cache-and-network",
     },
   );
-  const publicFormDefinitions = publicFormsData?.formDefinitions || [];
+  const publicFormDefinitions = useMemo(
+    () => publicFormsData?.formDefinitions || [],
+    [publicFormsData?.formDefinitions],
+  );
 
   // Drop library selection if the form disappears after refetch/delete.
   useEffect(() => {
@@ -920,7 +938,11 @@ function MatchingRoundEditor({
     skip: !selectedNetworkId,
     fetchPolicy: "cache-and-network",
   });
-  const networkOpportunities = opportunitiesData?.opportunities || [];
+
+  const networkOpportunities = useMemo(
+    () => opportunitiesData?.opportunities || [],
+    [opportunitiesData?.opportunities],
+  );
 
   const [updateOpportunity] = useMutation(UPDATE_OPPORTUNITY, {
     refetchQueries: selectedNetworkId
@@ -997,9 +1019,6 @@ function MatchingRoundEditor({
     return sortOpportunitiesByTitle(
       networkOpportunities.filter((opportunity) => {
         if (selectedSet.has(opportunity.id)) return false;
-        // Available queue: pending_review, returned (greyed / last in grid),
-        // and orphaned pre_selected (status set without round link, or round
-        // link cleared before status was rolled back).
         return (
           opportunity.status === "pending_review" ||
           opportunity.status === "returned" ||
@@ -1096,6 +1115,7 @@ function MatchingRoundEditor({
   );
   const [deleteFormDefinition] = useMutation(DELETE_FORM_DEFINITION);
   const [cloneFormForClass] = useMutation(CLONE_FORM_DEFINITION_FOR_CLASS);
+  const [publishFormDefinition] = useMutation(PUBLISH_FORM_DEFINITION);
   const saving = creating || updating;
 
   const persistOpportunitySelection = useCallback(
@@ -1375,8 +1395,14 @@ function MatchingRoundEditor({
   };
 
   const handleDeleteClassForm = async (form) => {
-    if (!form?.id || !canManageOpportunities || deletingFormId) return;
-    if (form.createdBy?.id !== user?.id) return;
+    if (
+      !form?.id ||
+      !canManageOpportunities ||
+      !canManageClassForms ||
+      deletingFormId
+    ) {
+      return;
+    }
     const title = form.title || form.id;
     if (
       !window.confirm(
@@ -1582,17 +1608,25 @@ function MatchingRoundEditor({
       !isNew,
   );
 
+  const canManageClassForms = Boolean(
+    user?.id &&
+      (myclass?.creator?.id === user.id ||
+        (myclass?.mentors || []).some((m) => m?.id === user.id)),
+  );
+
   const toggleOpportunityInRound = useCallback(
     async (opportunityId) => {
-      if (togglingOpportunityId) return;
+      if (togglingOpportunityId) return false;
       const isCurrentlySelected = selectedOpportunities.includes(opportunityId);
       const nextIds = isCurrentlySelected
         ? selectedOpportunities.filter((id) => id !== opportunityId)
         : [...selectedOpportunities, opportunityId];
       try {
         await persistOpportunitySelection(nextIds, opportunityId);
+        return true;
       } catch {
-        // Keep previous selection.
+        // Keep previous selection. persistOpportunitySelection already alerts.
+        return false;
       }
     },
     [selectedOpportunities, togglingOpportunityId, persistOpportunitySelection],
@@ -1829,7 +1863,8 @@ function MatchingRoundEditor({
   );
 
   const renderFormsPanel = () => {
-    const libraryBusy = saving || cloningPublic || Boolean(deletingFormId);
+    const libraryBusy =
+      saving || cloningPublic || Boolean(deletingFormId) || publishingAdd;
 
     const openCreateWizard = () => {
       setFormWizardDefinitionId(null);
@@ -1848,12 +1883,61 @@ function MatchingRoundEditor({
       setFormPreviewOpen(true);
     };
     const addFormToRound = (formId) => {
-      if (!formId || !canManageOpportunities || saving) return;
+      if (!formId || !canManageOpportunities || saving || publishingAdd) return;
       if (selectedFormDefinitionIds.includes(formId)) return;
       persistFormDefinitionSelection([
         ...selectedFormDefinitionIds,
         formId,
       ]);
+    };
+    const requestAddFormToRound = (form) => {
+      if (!form?.id || !canManageOpportunities || libraryBusy) return;
+      if (form.status === "draft") {
+        setPublishAddError(null);
+        setPublishAddForm({
+          id: form.id,
+          title: form.title || form.id,
+        });
+        return;
+      }
+      addFormToRound(form.id);
+    };
+    const closePublishAddModal = () => {
+      if (publishingAdd) return;
+      setPublishAddForm(null);
+      setPublishAddError(null);
+    };
+    const confirmPublishAndAdd = async () => {
+      const formId = publishAddForm?.id;
+      if (!formId || !canManageOpportunities || publishingAdd) return;
+      setPublishingAdd(true);
+      setPublishAddError(null);
+      try {
+        await publishFormDefinition({ variables: { id: formId } });
+        try {
+          await refetchFormLists();
+        } catch {
+          // Selection still proceeds; lists may refresh on next load.
+        }
+        if (!selectedFormDefinitionIds.includes(formId)) {
+          await persistFormDefinitionSelection([
+            ...selectedFormDefinitionIds,
+            formId,
+          ]);
+        }
+        setPublishAddForm(null);
+      } catch (error) {
+        console.error("Failed to publish and add form", error);
+        setPublishAddError(
+          t(
+            "opportunities.matchingRound.formPicker.publishAddModal.failed",
+            {},
+            { default: "Could not publish that form. Please try again." },
+          ),
+        );
+      } finally {
+        setPublishingAdd(false);
+      }
     };
     const removeFormFromRound = (formId) => {
       if (!formId || !canManageOpportunities || saving) return;
@@ -1941,11 +2025,9 @@ function MatchingRoundEditor({
     ];
 
     const buildClassLibraryMenuItems = (form) => {
-      const isPublished = form.status === "published";
-      const isCreatedByMe = form.createdBy?.id === user?.id;
       const items = [];
 
-      if (canManageOpportunities) {
+      if (canManageOpportunities && canManageClassForms) {
         items.push({
           key: "edit",
           label: t(
@@ -1967,31 +2049,7 @@ function MatchingRoundEditor({
         onClick: () => openPreview(form.id),
       });
 
-      if (isPublished) {
-        items.push({
-          key: "add",
-          label: t(
-            "opportunities.matchingRound.formPicker.addToRound",
-            {},
-            { default: "Add to this round" },
-          ),
-          onClick: () => addFormToRound(form.id),
-        });
-      } else {
-        items.push({
-          key: "draftBlocked",
-          label: t(
-            "opportunities.matchingRound.formPicker.addToRoundDisabledDraft",
-            {},
-            {
-              default: "Publish the form before adding it to this round.",
-            },
-          ),
-          static: true,
-        });
-      }
-
-      if (isCreatedByMe) {
+      if (canManageOpportunities && canManageClassForms) {
         items.push({
           key: "delete",
           label: t(
@@ -2015,15 +2073,6 @@ function MatchingRoundEditor({
           { default: "Preview" },
         ),
         onClick: () => openPreview(form.id),
-      },
-      {
-        key: "add",
-        label: t(
-          "opportunities.matchingRound.formPicker.addToRound",
-          {},
-          { default: "Add to this round" },
-        ),
-        onClick: () => addFormToRound(form.id),
       },
       {
         key: "copy",
@@ -2107,8 +2156,15 @@ function MatchingRoundEditor({
       );
     };
 
-    const renderFormRow = (form, { menuItems }) => {
+    const renderFormRow = (form, { menuItems, showAddToRound = false }) => {
       const selected = librarySelectedId === form.id;
+      const canAddToRound =
+        showAddToRound && canManageOpportunities && !libraryBusy;
+      const addToRoundLabel = t(
+        "opportunities.matchingRound.formPicker.addToRound",
+        {},
+        { default: "Add to this round" },
+      );
       const statusLabel =
         form.status === "draft"
           ? t(
@@ -2155,10 +2211,21 @@ function MatchingRoundEditor({
             </span>
           </button>
           <div
-            className="matchingRoundFormPickerLibraryRowMenu"
+            className="matchingRoundFormPickerLibraryRowActions"
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
           >
+            {showAddToRound ? (
+              <Button
+                type="button"
+                variant="subtle"
+                className="matchingRoundFormPickerAddButton"
+                disabled={!canAddToRound}
+                onClick={() => requestAddFormToRound(form)}
+              >
+                {addToRoundLabel}
+              </Button>
+            ) : null}
             <DropdownMenu
               ariaLabel={t(
                 "opportunities.matchingRound.formPicker.libraryRowMenuAria",
@@ -2169,6 +2236,9 @@ function MatchingRoundEditor({
               triggerStyle={{
                 opacity: libraryBusy ? 0.5 : 1,
                 pointerEvents: libraryBusy ? "none" : "auto",
+                border: "none",
+                background:
+                  "var(--MH-Theme-Neutrals-Lighter, #f3f3f3)",
               }}
             />
           </div>
@@ -2178,6 +2248,19 @@ function MatchingRoundEditor({
 
     return (
       <div className="classTabMatchingRoundPanel">
+        {formWizardBanner ? (
+          <MessageCard
+            variant="success"
+            message={formWizardBanner}
+            onClose={() => setFormWizardBanner(null)}
+            closeAriaLabel={t(
+              "opportunities.matchingRound.formWizard.bannerDismiss",
+              {},
+              { default: "Dismiss" },
+            )}
+            style={{ marginBottom: 12 }}
+          />
+        ) : null}
         {formsManagerOpen ? (
         <div className="matchingRoundFormPicker">
           <div className="matchingRoundFormPickerHeader matchingRoundFormPickerHeaderWithToggle">
@@ -2322,7 +2405,7 @@ function MatchingRoundEditor({
                     {},
                     {
                       default:
-                        "Shared forms for this class. Add them to this round from the menu. Only the creator can delete a form.",
+                        "Shared forms for this class. Use Add to this round to attach one. Class teachers and mentors can manage these forms.",
                     },
                   )}
                 </p>
@@ -2373,6 +2456,7 @@ function MatchingRoundEditor({
                 {classLibraryForms.map((form) =>
                   renderFormRow(form, {
                     menuItems: buildClassLibraryMenuItems(form),
+                    showAddToRound: true,
                   }),
                 )}
               </ul>
@@ -2459,6 +2543,7 @@ function MatchingRoundEditor({
                   {publicForms.map((form) =>
                     renderFormRow(form, {
                       menuItems: buildPublicMenuItems(form),
+                      showAddToRound: true,
                     }),
                   )}
                 </ul>
@@ -2474,7 +2559,15 @@ function MatchingRoundEditor({
           </p>
         </div>
         ) : (
-          <div className="matchingRoundFormSummary">
+          <div
+            className={clsx("matchingRoundFormSummary", {
+              isNeutral: selectedFormDefinitionIds.length === 0,
+              isInformation:
+                selectedFormDefinitionIds.length > 0 && !sponsorFormsVisible,
+              isSuccess:
+                selectedFormDefinitionIds.length > 0 && sponsorFormsVisible,
+            })}
+          >
             <div className="matchingRoundFormSummaryCopy">
               <h4 className="matchingRoundFormSummaryTitle">
                 {t(
@@ -2514,6 +2607,7 @@ function MatchingRoundEditor({
               type="button"
               variant="outline"
               className="matchingRoundFormSummaryManage"
+              style={{ color: "inherit", borderColor: "currentColor" }}
               onClick={() => setFormsManagerOpen(true)}
             >
               {t(
@@ -2553,7 +2647,7 @@ function MatchingRoundEditor({
           }}
           classId={myclass?.id}
           definitionId={formWizardDefinitionId}
-          onSaved={async (saved) => {
+          onSaved={async (saved, { didPublish } = {}) => {
             if (!saved?.id) return;
             try {
               await refetchFormLists();
@@ -2561,79 +2655,190 @@ function MatchingRoundEditor({
               // Selection still proceeds; lists may refresh on next load.
             }
             setLibrarySelectedId(saved.id);
-            if (saved.status === "published") {
+            // Only attach when the teacher explicitly published from the
+            // wizard. Save as draft must never add (or keep adding) a form
+            // based solely on returned status.
+            if (didPublish) {
               const nextIds = selectedFormDefinitionIds.includes(saved.id)
                 ? selectedFormDefinitionIds
                 : [...selectedFormDefinitionIds, saved.id];
               await persistFormDefinitionSelection(nextIds);
+              setFormWizardBanner(
+                t(
+                  "opportunities.matchingRound.formWizard.publishedAndAdded",
+                  {},
+                  { default: "Published and added to this round." },
+                ),
+              );
+              return;
             }
+            // If a form already in this round was demoted to draft, detach it.
+            if (
+              saved.status === "draft" &&
+              selectedFormDefinitionIds.includes(saved.id)
+            ) {
+              await persistFormDefinitionSelection(
+                selectedFormDefinitionIds.filter((id) => id !== saved.id),
+              );
+            }
+            setFormWizardBanner(
+              t(
+                "opportunities.matchingRound.formWizard.savedAsDraft",
+                {},
+                {
+                  default:
+                    "Saved as draft (not visible to sponsors yet).",
+                },
+              ),
+            );
           }}
         />
+        <Modal
+          open={Boolean(publishAddForm)}
+          onClose={closePublishAddModal}
+          title={t(
+            "opportunities.matchingRound.formPicker.publishAddModal.title",
+            {},
+            { default: "Publish this form?" },
+          )}
+          actions={
+            <>
+              <Button
+                type="button"
+                variant="text"
+                onClick={closePublishAddModal}
+                disabled={publishingAdd}
+              >
+                {t(
+                  "opportunities.matchingRound.formPicker.publishAddModal.cancel",
+                  {},
+                  { default: "Cancel" },
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="filled"
+                onClick={confirmPublishAndAdd}
+                disabled={publishingAdd || !publishAddForm?.id}
+              >
+                {publishingAdd
+                  ? t("opportunities.matchingRound.saving", {}, {
+                      default: "Saving…",
+                    })
+                  : t(
+                      "opportunities.matchingRound.formPicker.publishAddModal.confirm",
+                      {},
+                      { default: "Publish and add" },
+                    )}
+              </Button>
+            </>
+          }
+        >
+          <p style={{ margin: 0 }}>
+            {t(
+              "opportunities.matchingRound.formPicker.publishAddModal.body",
+              { title: publishAddForm?.title || "" },
+              {
+                default:
+                  "“{{title}}” is still a draft. Publish it and add it to this matching round?",
+              },
+            )}
+          </p>
+          {publishAddError ? (
+            <p
+              role="alert"
+              style={{
+                margin: "12px 0 0",
+                color: "var(--MH-Theme-Error-Dark, #b3261e)",
+              }}
+            >
+              {publishAddError}
+            </p>
+          ) : null}
+        </Modal>
       </div>
     );
   };
 
   const renderSelectedPanel = () => {
     const formCount = selectedFormDefinitionIds.length;
-    const summaryStatus =
-      formCount === 0
-        ? t("opportunities.matchingRound.formPicker.summaryNone", {}, {
-            default: "No questionnaires attached yet",
-          })
-        : [
-            formCount === 1
-              ? t(
-                  "opportunities.matchingRound.formPicker.summaryCountOne",
-                  {},
-                  { default: "1 form" },
-                )
-              : t(
-                  "opportunities.matchingRound.formPicker.summaryCount",
-                  { count: formCount },
-                  { default: "{{count}} forms" },
-                ),
-            sponsorFormsVisible
-              ? t(
-                  "opportunities.matchingRound.formPicker.visibilityVisible",
-                  {},
-                  { default: "Visible to sponsors" },
-                )
-              : t(
-                  "opportunities.matchingRound.formPicker.visibilityHidden",
-                  {},
-                  { default: "Hidden from sponsors" },
-                ),
-          ].join(" · ");
+    const openFollowUpForms = () => {
+      setFormsManagerOpen(true);
+      setActivePanel(PANELS.forms);
+    };
+
+    let formsMessageVariant = "neutral";
+    let formsMessage;
+    if (formCount === 0) {
+      formsMessageVariant = "neutral";
+      formsMessage = t(
+        "opportunities.matchingRound.formPicker.selectedTabNone",
+        {},
+        {
+          default:
+            "Add sponsor questionnaires in Follow-up when you’re ready.",
+        },
+      );
+    } else if (!sponsorFormsVisible) {
+      formsMessageVariant = "information";
+      formsMessage =
+        formCount === 1
+          ? t(
+              "opportunities.matchingRound.formPicker.selectedTabHiddenOne",
+              {},
+              {
+                default:
+                  "1 questionnaire selected — still hidden from sponsors. Open Follow-up to show it.",
+              },
+            )
+          : t(
+              "opportunities.matchingRound.formPicker.selectedTabHidden",
+              { count: formCount },
+              {
+                default:
+                  "{{count}} questionnaires selected — still hidden from sponsors. Open Follow-up to show them.",
+              },
+            );
+    } else {
+      formsMessageVariant = "success";
+      formsMessage =
+        formCount === 1
+          ? t(
+              "opportunities.matchingRound.formPicker.selectedTabVisibleOne",
+              {},
+              { default: "1 questionnaire is visible to sponsors." },
+            )
+          : t(
+              "opportunities.matchingRound.formPicker.selectedTabVisible",
+              { count: formCount },
+              {
+                default: "{{count}} questionnaires are visible to sponsors.",
+              },
+            );
+    }
 
     return (
       <div className="classTabMatchingRoundPanel">
-        <div className="matchingRoundFormSummary">
-          <div className="matchingRoundFormSummaryCopy">
-            <h4 className="matchingRoundFormSummaryTitle">
-              {t(
-                "opportunities.matchingRound.formPicker.summaryTitle",
-                {},
-                { default: "Sponsor questionnaires" },
-              )}
-            </h4>
-            <p className="matchingRoundFormSummaryStatus">{summaryStatus}</p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="matchingRoundFormSummaryManage"
-            onClick={() => {
-              setFormsManagerOpen(true);
-              setActivePanel(PANELS.forms);
-            }}
-          >
-            {t(
-              "opportunities.matchingRound.formPicker.summaryManage",
+        {formWizardBanner ? (
+          <MessageCard
+            variant="success"
+            message={formWizardBanner}
+            onClose={() => setFormWizardBanner(null)}
+            closeAriaLabel={t(
+              "opportunities.matchingRound.formWizard.bannerDismiss",
               {},
-              { default: "Manage forms" },
+              { default: "Dismiss" },
             )}
-          </Button>
-        </div>
+            style={{ marginBottom: 12 }}
+          />
+        ) : null}
+        <MessageCard
+          className="matchingRoundSelectedFormsMessage"
+          variant={formsMessageVariant}
+          message={formsMessage}
+          onClick={openFollowUpForms}
+          ariaLabel={formsMessage}
+        />
         <MatchingRoundOpportunitiesGrid
           opportunities={selectedNetworkOpportunities}
           selectedIds={selectedOpportunities}

@@ -1,10 +1,22 @@
 import Link from "next/link";
+import styled from "styled-components";
 import useTranslation from "next-translate/useTranslation";
 
+import Navbar, { NavbarItem } from "../../DesignSystem/Navbar";
 import DevelopProjectBank from "../../Projects/Bank/Develop";
 import DevelopStudyBank from "../../Studies/Bank/Develop";
 import DevelopTaskBank from "../../Tasks/Bank/Develop";
-import VisualsBank from "../../Visuals/Bank/Main";
+import DevelopVisualsBank from "./Visuals/Main";
+
+/**
+ * The design system's 24px inset suits nav that sits at the window edge; these
+ * tabs sit inside the page body, so they run flush with the heading above them.
+ */
+const SectionNavbar = styled(Navbar)`
+  .navbar-container {
+    padding: 4px 0px;
+  }
+`;
 
 export default function Panels({ query, user }) {
   const { t } = useTranslation("builder");
@@ -14,6 +26,9 @@ export default function Panels({ query, user }) {
     (permission) => permission?.name
   );
 
+  // Visuals is still a placeholder section, so it stays behind ADMIN for now.
+  const isAdmin = userPermissions.includes("ADMIN");
+
   // choose default selector for user dependent on user permissions
   const selectorForUser = userPermissions.includes("SCIENTIST")
     ? selector || "studies"
@@ -21,79 +36,61 @@ export default function Panels({ query, user }) {
 
   return (
     <>
-      <div className="menu" id="myPanel">
-        <Link href="/dashboard/develop/projects">
-          <div
-            className={
-              selectorForUser === "projects"
-                ? "menuTitle selectedMenuTitle"
-                : "menuTitle"
-            }
-          >
-            <p>{t("myProjects")}</p>
-          </div>
-        </Link>
+      <SectionNavbar
+        variant="underline"
+        id="myPanel"
+        aria-label={t("developSections", {}, { default: "Develop sections" })}
+      >
+        <NavbarItem
+          as={Link}
+          href="/dashboard/develop/projects"
+          selected={selectorForUser === "projects"}
+        >
+          {t("myProjects")}
+        </NavbarItem>
 
-        <Link href="/dashboard/develop/studies">
-          <div
-            className={
-              selectorForUser === "studies"
-                ? "menuTitle selectedMenuTitle"
-                : "menuTitle"
-            }
-          >
-            <p>{t("myStudies")}</p>
-          </div>
-        </Link>
+        <NavbarItem
+          as={Link}
+          href="/dashboard/develop/studies"
+          selected={selectorForUser === "studies"}
+        >
+          {t("myStudies")}
+        </NavbarItem>
 
-        <Link href="/dashboard/develop/tasks">
-          <div
-            className={
-              selectorForUser === "tasks"
-                ? "menuTitle selectedMenuTitle"
-                : "menuTitle"
-            }
-          >
-            <p>{t("myTasks")}</p>
-          </div>
-        </Link>
+        <NavbarItem
+          as={Link}
+          href="/dashboard/develop/tasks"
+          selected={selectorForUser === "tasks"}
+        >
+          {t("myTasks")}
+        </NavbarItem>
 
-        <Link href="/dashboard/develop/surveys">
-          <div
-            className={
-              selectorForUser === "surveys"
-                ? "menuTitle selectedMenuTitle"
-                : "menuTitle"
-            }
-          >
-            <p>{t("mySurveys")}</p>
-          </div>
-        </Link>
+        <NavbarItem
+          as={Link}
+          href="/dashboard/develop/surveys"
+          selected={selectorForUser === "surveys"}
+        >
+          {t("mySurveys")}
+        </NavbarItem>
 
-        <Link href="/dashboard/develop/blocks">
-          <div
-            className={
-              selectorForUser === "blocks"
-                ? "menuTitle selectedMenuTitle"
-                : "menuTitle"
-            }
-          >
-            <p>{t("myBlocks")}</p>
-          </div>
-        </Link>
+        <NavbarItem
+          as={Link}
+          href="/dashboard/develop/blocks"
+          selected={selectorForUser === "blocks"}
+        >
+          {t("myBlocks")}
+        </NavbarItem>
 
-        <Link href="/dashboard/develop/visuals">
-          <div
-            className={
-              selectorForUser === "visuals"
-                ? "menuTitle selectedMenuTitle"
-                : "menuTitle"
-            }
+        {isAdmin && (
+          <NavbarItem
+            as={Link}
+            href="/dashboard/develop/visuals"
+            selected={selectorForUser === "visuals"}
           >
-            <p>{t("myVisuals", "My Visuals")}</p>
-          </div>
-        </Link>
-      </div>
+            {t("myVisuals", {}, { default: "Visuals" })}
+          </NavbarItem>
+        )}
+      </SectionNavbar>
 
       {selectorForUser == "projects" && <DevelopProjectBank user={user} />}
 
@@ -111,7 +108,7 @@ export default function Panels({ query, user }) {
         <DevelopTaskBank user={user} taskType="BLOCK" />
       )}
 
-      {selectorForUser == "visuals" && <VisualsBank user={user} />}
+      {isAdmin && selectorForUser == "visuals" && <DevelopVisualsBank />}
     </>
   );
 }

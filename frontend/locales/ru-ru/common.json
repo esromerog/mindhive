@@ -98,13 +98,55 @@
 	},
 	"definitionForm": {
 		"fieldRequired": "",
+		"file": {
+			"current": "",
+			"download": "Скачать файл",
+			"downloadVideo": "",
+			"previewVideo": "",
+			"readyToUpload": "",
+			"remove": "",
+			"replaceConfirm": ""
+		},
 		"fixMultipleFields": "",
 		"fixSingleField": "",
 		"invalidFormat": "",
+		"linkList": {
+			"add": "",
+			"comment": "",
+			"commentPlaceholder": "",
+			"empty": "",
+			"emptyReadonly": "",
+			"remove": "",
+			"title": "",
+			"titlePlaceholder": "",
+			"url": ""
+		},
 		"max": "",
 		"maxLength": "",
+		"mediaAssetList": {
+			"add": "",
+			"addFromLibrary": "",
+			"alreadyAdded": "",
+			"changeFromLibrary": "",
+			"comment": "",
+			"commentPlaceholder": "",
+			"empty": "",
+			"emptyReadonly": "",
+			"media": "",
+			"remove": "",
+			"replaceUpload": "",
+			"title": "",
+			"titlePlaceholder": "",
+			"upload": ""
+		},
 		"min": "",
+		"resourcePreview": {
+			"download": "",
+			"noDescription": "",
+			"openLink": ""
+		},
 		"saveFailed": "",
+		"selectRequired": "",
 		"wordLimit": ""
 	},
 	"discoverDescription": "Ознакомьтесь с нашей коллекцией исследований, заданий и опросов, созданных старшеклассниками в рамках программы MindHive и учёными-партнёрами. Примите участие в исследованиях или просмотрите задания и опросы.",
@@ -226,7 +268,7 @@
 		"title": "Настройки языка",
 		"updatePreferences": "Обновить настройки"
 	},
-	"loading": "",
+	"loading": "Загрузка...",
 	"mediaLibrary": {
 		"choose": "",
 		"empty": "",
@@ -248,22 +290,24 @@
 		"teachers": "Учителя"
 	},
 	"opportunities": {
-		"close": "",
+		"close": "Закрыть",
 		"columns": {
-			"actions": "",
-			"name": "",
-			"status": "",
-			"visibility": ""
+			"actions": "Действия",
+			"name": "Имя",
+			"status": "Статус",
+			"visibility": "Видимость"
 		},
-		"delete": "",
+		"delete": "Удалить",
 		"deleteConfirm": "",
-		"edit": "",
+		"edit": "Редактировать",
 		"empty": "",
-		"loading": "",
+		"loading": "Загрузка...",
 		"newButton": "",
 		"title": ""
 	},
 	"pagination": {
+		"goToPage": "",
+		"navLabel": "",
 		"next": "Следующий",
 		"of": "из {{pageCount}}",
 		"page": "Страница",
@@ -320,7 +364,7 @@
 		"proceedNextTask": "Перейти к следующему заданию",
 		"thankYou": "Спасибо за участие в этом задании!"
 	},
-	"remove": "",
+	"remove": "Удалить",
 	"reviewed": {
 		"menuTitle": "Обзор"
 	},
@@ -363,7 +407,7 @@
 		"loginHere": "Войти здесь",
 		"participant": "Участник исследования",
 		"scientist": "Ученый",
-		"sponsor": "",
+		"sponsor": "Спонсор",
 		"sponsorNyuCuspRecommendation": "",
 		"student": "Студент",
 		"teacher": "Учитель",

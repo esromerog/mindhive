@@ -68,6 +68,7 @@ const TooltipNetworkList = styled.ul`
 
 const LABEL_DEFAULTS = {
   draft: "Draft",
+  inRevision: "In revision",
   returnedWithComments: "Returned with comments",
   submitted: "Submitted",
   preSelected: "Pre-selected",
@@ -136,13 +137,15 @@ function StepChip({ step, label, onClick, openLabel }) {
  *
  * @param {object} props
  * @param {(step: object) => void} [props.onStepClick] — when set, draft /
- *   returned chips call this to open the opportunity editor.
+ *   in-revision / returned chips call this to open the opportunity editor.
  */
 export default function OpportunityListStepper({
   status,
   proposalData,
   rounds,
+  reviewNotes,
   networks = [],
+  videoFile = null,
   onStepClick,
 }) {
   const { t } = useTranslation("connect");
@@ -150,6 +153,8 @@ export default function OpportunityListStepper({
     status,
     proposalData,
     rounds,
+    videoFile,
+    reviewNotes,
   });
 
   const openLabel = t("myOpportunitiesList.stepper.openOpportunity", {}, {

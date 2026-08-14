@@ -50,6 +50,8 @@ import seedMissingForms from "./seedMissingForms";
 import duplicateFormDefinition from "./duplicateFormDefinition";
 import publishFormDefinition from "./publishFormDefinition";
 import saveClassFormDefinition from "./saveClassFormDefinition";
+import saveBoardReviewFormDefinition from "./saveBoardReviewFormDefinition";
+import forkReviewFormForBoard from "./forkReviewFormForBoard";
 import cloneFormDefinitionForClass from "./cloneFormDefinitionForClass";
 import seedMilestones from "./seedMilestones";
 import seedMissingMilestones from "./seedMissingMilestones";
@@ -62,6 +64,10 @@ import backfillLowercaseKeys from "./backfillLowercaseKeys";
 import backfillProjectBoardFormScope from "./backfillProjectBoardFormScope";
 import backfillProposalBoardPublicIds from "./backfillProposalBoardPublicIds";
 import syncClassTemplateBoards from "./syncClassTemplateBoards";
+import {
+  searchConnectUsers,
+  searchConnectUsersCount,
+} from "./searchConnectUsers";
 import { GraphQLSchema } from "graphql";
 
 // make a fake gql tagged template literal
@@ -204,6 +210,12 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         # Teacher wizard: create/update a class-scoped opportunity form
         # with baked-in defaults. Optionally publish in the same call.
         saveClassFormDefinition(input: SaveClassFormDefinitionInput!): FormDefinition
+        # Teacher wizard: create/update a project_board-scoped review form
+        # (feedback surface, json_bucket fields). Optionally publish.
+        saveBoardReviewFormDefinition(input: SaveBoardReviewFormDefinitionInput!): FormDefinition
+        # Copy a milestone's review form onto this template board so the
+        # teacher can edit it without mutating the global definition.
+        forkReviewFormForBoard(templateBoardId: ID!, milestoneId: ID!): FormDefinition
         # Teacher wizard: clone a published global opportunity form into
         # a class-scoped draft owned by the class creator.
         cloneFormDefinitionForClass(sourceId: ID!, classId: ID!): FormDefinition
@@ -299,6 +311,14 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         # Public-safe invite context for login/signup. Returns only
         # non-sensitive display fields for a tokenized NetworkInvite.
         networkInviteContext(token: String!): NetworkInviteContext
+        # Connect Bank people search. Case-insensitive on Postgres via
+        # Prisma mode; plain contains on local SQLite (ASCII CI).
+        searchConnectUsers(
+          skip: Int
+          take: Int
+          search: String
+        ): [Profile!]!
+        searchConnectUsersCount(search: String): Int!
       }
       input ClassFormFieldInput {
         name: String
@@ -318,6 +338,15 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         fields: [ClassFormFieldInput!]!
         publish: Boolean
       }
+      input SaveBoardReviewFormDefinitionInput {
+        proposalBoardId: ID!
+        definitionId: ID
+        title: String!
+        description: String
+        fields: [ClassFormFieldInput!]!
+        publish: Boolean
+        milestoneKey: String
+      }
     `,
     resolvers: {
       Opportunity: opportunityMultiselectResolvers,
@@ -325,6 +354,8 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         resolveFormDefinition,
         resolveMilestonesForBoard,
         networkInviteContext,
+        searchConnectUsers,
+        searchConnectUsersCount,
       },
       Mutation: {
         sendEmail,
@@ -369,6 +400,8 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         seedMissingForms,
         duplicateFormDefinition,
         saveClassFormDefinition,
+        saveBoardReviewFormDefinition,
+        forkReviewFormForBoard,
         cloneFormDefinitionForClass,
         publishFormDefinition,
         seedMilestones,

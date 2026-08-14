@@ -1,3 +1,21 @@
+/** Fixed FormField.name / Opportunity column for the intro-video question. */
+export const INTRO_VIDEO_FIELD_NAME = "videoFile";
+
+/** Client-side preview of the server-enforced file validation. */
+export const INTRO_VIDEO_VALIDATION = {
+  maxFileSize: 500 * 1024 * 1024,
+  allowedMimes: "video/mp4,video/webm",
+};
+
+export function isIntroVideoQuestion(questionOrField) {
+  if (!questionOrField) return false;
+  return (
+    questionOrField.fieldType === "file" ||
+    questionOrField.name === INTRO_VIDEO_FIELD_NAME ||
+    questionOrField.storageColumn === INTRO_VIDEO_FIELD_NAME
+  );
+}
+
 export function parseOptionLines(raw) {
   if (!raw) return [];
   return String(raw)
@@ -45,28 +63,33 @@ export function createBlankQuestion(overrides = {}) {
 }
 
 export function questionsFromDefinition(definition) {
-  const card = definition?.cards?.[0];
-  const fields = card?.fields || [];
+  const cards = definition?.cards || [];
+  const fields = cards.flatMap((card) => card.fields || []);
   if (!fields.length) return [createBlankQuestion()];
-  return fields.map((f) =>
-    createBlankQuestion({
-      name: f.name || null,
-      fieldType: f.fieldType || "text",
+  return fields.map((f) => {
+    const introVideo = isIntroVideoQuestion(f);
+    return createBlankQuestion({
+      name: introVideo ? INTRO_VIDEO_FIELD_NAME : f.name || null,
+      fieldType: introVideo ? "file" : f.fieldType || "text",
       label: f.label || "",
       helperText: f.helperText || "",
       placeholder: f.placeholder || "",
       isRequired: !!f.isRequired,
       optionsText: optionsToLines(f.options),
+      originalOptions: Array.isArray(f.options) ? f.options : null,
       typeChosen: true,
-    })
-  );
+    });
+  });
 }
 
 export function questionsToMutationFields(questions) {
   return questions.map((q, order) => {
     const fieldType = q.fieldType;
+    const introVideo = fieldType === "file";
     const payload = {
-      name: q.name || undefined,
+      name: introVideo
+        ? INTRO_VIDEO_FIELD_NAME
+        : q.name || undefined,
       fieldType,
       label: q.label,
       helperText: q.helperText || "",
@@ -76,6 +99,8 @@ export function questionsToMutationFields(questions) {
     };
     if (fieldType === "select" || fieldType === "multiselect") {
       payload.options = parseOptionLines(q.optionsText);
+    } else if (Array.isArray(q.originalOptions) && q.originalOptions.length) {
+      payload.options = q.originalOptions;
     }
     return payload;
   });
@@ -93,17 +118,31 @@ export function buildPreviewDefinition({ title, description, questions }) {
         title: title || "",
         description: description || "",
         order: 0,
-        fields: questions.map((q, order) => ({
-          id: q.localId,
-          name: q.name || `q_${order}`,
-          fieldType: q.fieldType,
-          label: q.label,
-          helperText: q.helperText,
-          placeholder: q.placeholder,
-          isRequired: q.isRequired,
-          order,
-          options: parseOptionLines(q.optionsText),
-        })),
+        fields: questions.map((q, order) => {
+          const introVideo = q.fieldType === "file";
+          return {
+            id: q.localId,
+            name: introVideo
+              ? INTRO_VIDEO_FIELD_NAME
+              : q.name || `q_${order}`,
+            fieldType: q.fieldType,
+            label: q.label,
+            helperText: q.helperText,
+            placeholder: q.placeholder,
+            isRequired: q.isRequired,
+            order,
+            options: parseOptionLines(q.optionsText),
+            // Preview mirrors the server-enforced Opportunity.videoFile mapping.
+            ...(introVideo
+              ? {
+                  storage: "column",
+                  storageColumn: INTRO_VIDEO_FIELD_NAME,
+                  storageEntity: "self",
+                  validation: INTRO_VIDEO_VALIDATION,
+                }
+              : {}),
+          };
+        }),
       },
     ],
   };

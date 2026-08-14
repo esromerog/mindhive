@@ -1,13 +1,21 @@
 // Create or update a class-scoped opportunity FormDefinition for the
 // teacher form wizard. Teachers never touch storage / key / surface /
 // scope — those are baked in here. Updates edit the same row in place
-// (including after publish).
+// (including after publish). Save as draft (publish=false) sets
+// status="draft"; publish=true runs publishFormDefinition afterward.
 import { canMutateFormDefinition } from "../access";
 import { FIELD_TYPE_OPTIONS } from "../schemas/FormField";
 
 const ALLOWED_FIELD_TYPES = new Set<string>(
   FIELD_TYPE_OPTIONS.map((o) => o.value)
 );
+
+/** Opportunity.videoFile — fixed mapping for the teacher intro-video question. */
+export const INTRO_VIDEO_FIELD_NAME = "videoFile";
+export const INTRO_VIDEO_VALIDATION = {
+  maxFileSize: 500 * 1024 * 1024,
+  allowedMimes: "video/mp4,video/webm",
+};
 
 type ClassFormFieldInput = {
   name?: string | null;
@@ -29,7 +37,23 @@ type SaveClassFormDefinitionInput = {
   publish?: boolean | null;
 };
 
-function slugify(raw: string, fallback: string) {
+type NormalizedClassField = {
+  name: string;
+  fieldType: string;
+  label: string;
+  helperText: string;
+  placeholder: string;
+  isRequired: boolean;
+  order: number;
+  options: any;
+  storage: string;
+  storageBucket: string;
+  storageColumn: string;
+  storageEntity: string;
+  validation: typeof INTRO_VIDEO_VALIDATION | null;
+};
+
+export function slugify(raw: string, fallback: string) {
   const slug = String(raw || "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
@@ -49,14 +73,64 @@ function uniqueFieldName(label: string, used: Set<string>, index: number) {
   return name;
 }
 
-async function assertClassCreator(context: any, classId: string) {
+export function isIntroVideoFieldInput(field: {
+  fieldType?: string | null;
+  name?: string | null;
+  storageColumn?: string | null;
+}) {
+  return (
+    field?.fieldType === "file" ||
+    field?.name === INTRO_VIDEO_FIELD_NAME ||
+    field?.storageColumn === INTRO_VIDEO_FIELD_NAME
+  );
+}
+
+/**
+ * Source fields that already target Opportunity.videoFile (e.g. seeded
+ * global form). Used when cloning so unrelated file uploads stay in JSON.
+ */
+export function isManagedIntroVideoSourceField(field: {
+  name?: string | null;
+  storageColumn?: string | null;
+}) {
+  return (
+    field?.name === INTRO_VIDEO_FIELD_NAME ||
+    field?.storageColumn === INTRO_VIDEO_FIELD_NAME
+  );
+}
+
+/** Server-owned Opportunity.videoFile wiring — never taken from the client. */
+export function introVideoFieldOverrides(): Pick<
+  NormalizedClassField,
+  | "name"
+  | "fieldType"
+  | "storage"
+  | "storageBucket"
+  | "storageColumn"
+  | "storageEntity"
+  | "validation"
+  | "options"
+> {
+  return {
+    name: INTRO_VIDEO_FIELD_NAME,
+    fieldType: "file",
+    storage: "column",
+    storageBucket: "",
+    storageColumn: INTRO_VIDEO_FIELD_NAME,
+    storageEntity: "self",
+    validation: INTRO_VIDEO_VALIDATION,
+    options: null,
+  };
+}
+
+async function assertClassTeacherOrMentor(context: any, classId: string) {
   const session = context.session;
   if (!session?.itemId) {
     throw new Error("You must be signed in to do this.");
   }
   const klass = await context.query.Class.findOne({
     where: { id: classId },
-    query: "id creator { id }",
+    query: "id creator { id } mentors { id }",
   });
   if (!klass) {
     throw new Error("Class not found.");
@@ -68,17 +142,29 @@ async function assertClassCreator(context: any, classId: string) {
   const isAdmin = (profile?.permissions || []).some(
     (p: any) => p.canManageUsers
   );
-  if (!isAdmin && klass.creator?.id !== session.itemId) {
-    throw new Error("Forbidden: only the class creator can manage class forms.");
+  if (!isAdmin) {
+    const authorizedIds = [
+      klass.creator?.id,
+      ...(klass.mentors || []).map((m: any) => m?.id),
+    ].filter(Boolean);
+    if (!authorizedIds.includes(session.itemId)) {
+      throw new Error(
+        "Forbidden: only class creators or mentors can manage class forms."
+      );
+    }
   }
   return klass;
 }
 
-function normalizeFields(fields: ClassFormFieldInput[]) {
+export function normalizeFields(
+  fields: ClassFormFieldInput[],
+  { allowIntroVideo = true }: { allowIntroVideo?: boolean } = {}
+): NormalizedClassField[] {
   if (!Array.isArray(fields) || fields.length === 0) {
     throw new Error("Add at least one question before saving.");
   }
   const used = new Set<string>();
+  let introVideoCount = 0;
   return fields.map((f, index) => {
     const fieldType = String(f.fieldType || "").trim();
     if (!ALLOWED_FIELD_TYPES.has(fieldType)) {
@@ -94,6 +180,30 @@ function normalizeFields(fields: ClassFormFieldInput[]) {
     ) {
       throw new Error(`"${label}" needs at least one choice.`);
     }
+
+    if (allowIntroVideo && isIntroVideoFieldInput({ ...f, fieldType })) {
+      introVideoCount += 1;
+      if (introVideoCount > 1) {
+        throw new Error(
+          "Only one intro video upload question is allowed per form."
+        );
+      }
+      if (used.has(INTRO_VIDEO_FIELD_NAME)) {
+        throw new Error(
+          "Only one intro video upload question is allowed per form."
+        );
+      }
+      used.add(INTRO_VIDEO_FIELD_NAME);
+      return {
+        label,
+        helperText: f.helperText || "",
+        placeholder: f.placeholder || "",
+        isRequired: !!f.isRequired,
+        order: f.order ?? index,
+        ...introVideoFieldOverrides(),
+      };
+    }
+
     const name =
       (f.name && slugify(f.name, "")) ||
       uniqueFieldName(label, used, index);
@@ -106,22 +216,20 @@ function normalizeFields(fields: ClassFormFieldInput[]) {
       placeholder: f.placeholder || "",
       isRequired: !!f.isRequired,
       order: f.order ?? index,
-      options:
-        fieldType === "select" || fieldType === "multiselect"
-          ? f.options
-          : null,
+      options: Array.isArray(f.options) ? f.options : null,
       storage: "json_bucket",
       storageBucket: "content",
       storageColumn: "",
       storageEntity: "self",
+      validation: null,
     };
   });
 }
 
-async function replaceCardFields(
+export async function replaceCardFields(
   sudo: any,
   cardId: string,
-  fields: ReturnType<typeof normalizeFields>
+  fields: NormalizedClassField[]
 ) {
   const existing = await sudo.query.FormField.findMany({
     where: { card: { id: { equals: cardId } } },
@@ -146,6 +254,7 @@ async function replaceCardFields(
         storageBucket: f.storageBucket,
         storageColumn: f.storageColumn,
         storageEntity: f.storageEntity,
+        validation: f.validation,
       },
       query: "id",
     });
@@ -161,7 +270,7 @@ async function saveClassFormDefinition(
   if (!classId) throw new Error("classId is required.");
   if (!String(title || "").trim()) throw new Error("Title is required.");
 
-  await assertClassCreator(context, classId);
+  await assertClassTeacherOrMentor(context, classId);
   const normalizedFields = normalizeFields(fields || []);
   const sudo = context.sudo();
   const trimmedTitle = String(title).trim();
@@ -176,7 +285,7 @@ async function saveClassFormDefinition(
         id
         scope
         status
-        class { id creator { id } }
+        class { id creator { id } mentors { id } }
         cards(orderBy: { order: asc }) { id }
       `,
     });
@@ -194,6 +303,9 @@ async function saveClassFormDefinition(
       data: {
         title: trimmedTitle,
         description: trimmedDescription,
+        // Honor Save as draft: demote published (or other) rows unless
+        // this save continues into publishFormDefinition below.
+        ...(!publish ? { status: "draft" } : {}),
       },
     });
 

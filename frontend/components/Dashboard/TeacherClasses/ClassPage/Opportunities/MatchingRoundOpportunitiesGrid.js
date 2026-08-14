@@ -378,7 +378,7 @@ export default function MatchingRoundOpportunitiesGrid({
   roundId = null,
 }) {
   const { t } = useTranslation("classes");
-  const user = useUser();
+  const { user } = useUser();
   const viewerId = user?.id || null;
   const gridRef = useRef(null);
   const [dismissedHighlights, setDismissedHighlights] = useState(() =>
@@ -568,7 +568,7 @@ export default function MatchingRoundOpportunitiesGrid({
             fontSize: "14px",
             fontWeight: 500,
             color: unread
-              ? "var(--MH-Theme-Primary-Dark, #336F8A)"
+              ? "var(--MH-Theme-Additional-Accent-Dark, #3f288f)"
               : "#171717",
           }}
           leadingIcon={

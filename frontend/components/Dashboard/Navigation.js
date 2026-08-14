@@ -58,7 +58,7 @@ function useCollapsedMenu() {
 
 export default function DashboardNavigation() {
   const router = useRouter();
-  const user = useContext(UserContext);
+  const { user } = useContext(UserContext);
   const { t } = useTranslation("navigation");
   const [collapsed, toggleCollapsed] = useCollapsedMenu();
 
@@ -95,7 +95,7 @@ export default function DashboardNavigation() {
         <div className="menuBarLogo">
           <Link href="/" aria-label="mindHIVE">
             <img
-              src={collapsed ? "/favicon.png" : "/mh_logo_color.svg"}
+              src={collapsed ? "/favicon.svg" : "/mh_logo_color.svg"}
               alt="mindHIVE"
             />
           </Link>

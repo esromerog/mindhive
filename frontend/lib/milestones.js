@@ -3,7 +3,7 @@ import {
   RESOLVE_MILESTONES_FOR_BOARD,
 } from "../components/Queries/Milestone";
 import { normalizeCurriculumType } from "./curriculumTypes";
-import { FEEDBACK_CENTER_TABS } from "./feedbackCenterTabs";
+import { isFeedbackCenterMilestone } from "./feedbackCenterTabs";
 
 export { GET_MILESTONES, RESOLVE_MILESTONES_FOR_BOARD };
 
@@ -111,6 +111,18 @@ export function resolveReviewFormKey(milestone, curriculumType) {
   return pattern
     .replace(/\{\{key\}\}/g, milestone?.key || "")
     .replace(/\{\{curriculumType\}\}/g, normalizedType);
+}
+
+export function isStudyStatusMilestone(milestone) {
+  if (!milestone) return false;
+  return (
+    milestone.statusTarget === "study" ||
+    milestone.actionCardType === "ACTION_COLLECTING_DATA"
+  );
+}
+
+export function milestoneHasReviewQuestionnaire(milestone) {
+  return !!milestone && !isStudyStatusMilestone(milestone);
 }
 
 export function canUserReviewMilestone(
@@ -335,21 +347,5 @@ export function getReviewStepOptions(milestones = [], t) {
 }
 
 export function getFeedbackCenterMilestones(milestones = []) {
-  const templateBoardMs = milestones.filter(
-    (m) =>
-      m.scope === "template" &&
-      m.statusTarget === "board" &&
-      m.showInFeedbackCenter !== false
-  );
-  if (templateBoardMs.length > 0) {
-    return [...templateBoardMs].sort(
-      (a, b) => (a.position ?? 0) - (b.position ?? 0)
-    );
-  }
-
-  return FEEDBACK_CENTER_TABS.map((tab) =>
-    getMilestoneByKey(tab.milestoneKey, milestones)
-  ).filter(
-    (m) => m && m.statusTarget === "board" && m.showInFeedbackCenter !== false
-  );
+  return (milestones || []).filter(isFeedbackCenterMilestone);
 }

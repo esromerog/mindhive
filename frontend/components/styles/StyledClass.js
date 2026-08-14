@@ -2,6 +2,16 @@ import styled from "styled-components";
 
 const StyledClass = styled.div`
   display: grid;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  box-sizing: border-box;
+
+  > * {
+    min-width: 0;
+    max-width: 100%;
+  }
 
   .teacherClassesHeader {
     display: flex;
@@ -311,7 +321,7 @@ const StyledClass = styled.div`
       padding: 8px;
       border: 1px solid #F3F3F3;
       border-radius: 8px;
-      background: #F3F3F3;
+      background: var(--MH-Theme-Neutrals-White, #FFFFFF);
       color: #3d3d3d;
 
       &.isCollapsed {
@@ -1533,6 +1543,11 @@ const StyledClass = styled.div`
       background: #ffffff;
     }
 
+    .matchingRoundSelectedFormsMessage {
+      width: 100%;
+      margin-bottom: 12px;
+    }
+
     .matchingRoundFormSummary {
       display: flex;
       flex-wrap: wrap;
@@ -1541,9 +1556,20 @@ const StyledClass = styled.div`
       gap: 12px 16px;
       width: 100%;
       padding: 12px 16px;
-      border: 1px solid #c5dde0;
-      border-radius: 12px;
-      background: var(--MH-Theme-Primary-Light, #def8fb);
+      border: none;
+      border-radius: 8px;
+      background: var(--MH-Theme-Neutrals-Lighter, #f3f3f3);
+      color: var(--MH-Theme-Neutrals-Dark, #6a6a6a);
+    }
+
+    .matchingRoundFormSummary.isInformation {
+      background: var(--MH-Theme-Additional-Accent-Light, #f5f2ff);
+      color: var(--MH-Theme-Additional-Accent-Dark, #3f288f);
+    }
+
+    .matchingRoundFormSummary.isSuccess {
+      background: var(--MH-Theme-Neutrals-Light-Green, #f6f9f8);
+      color: var(--MH-Theme-Success-Dark, #1d6b3a);
     }
 
     .matchingRoundFormSummaryCopy {
@@ -1558,14 +1584,14 @@ const StyledClass = styled.div`
       font-size: 14px;
       font-weight: 600;
       line-height: 18px;
-      color: #171717;
+      color: inherit;
     }
 
     .matchingRoundFormSummaryStatus {
       margin: 0;
       font-size: 13px;
       line-height: 18px;
-      color: #5f6871;
+      color: inherit;
     }
 
     .matchingRoundFormSummaryManage {
@@ -1824,36 +1850,49 @@ const StyledClass = styled.div`
       align-items: center;
       gap: 8px 10px;
       padding: 8px 10px;
-      border: 1px solid #E6E6E6;
+      border: 1px solid var(--MH-Theme-Additional-Accent-Medium, #d8d3e7);
       border-radius: 8px;
-      background: #fafbfb;
+      background: var(--MH-Theme-Additional-Accent-Light, #f5f2ff);
       box-sizing: border-box;
     }
 
     .matchingRoundFormPickerLibraryVisibility.isVisible {
-      background: #e8f7ec;
-      border-color: #b7d9c4;
+      background: var(--MH-Theme-Neutrals-Light-Green, #f6f9f8);
+      border-color: #b8dcc8;
     }
 
     .matchingRoundFormPickerVisibilityStatus {
       font-size: 13px;
       font-weight: 600;
       line-height: 18px;
-      color: #5f6871;
+      color: var(--MH-Theme-Additional-Accent-Dark, #3f288f);
     }
 
     .matchingRoundFormPickerVisibilityStatus.isVisible {
-      color: #1c8f36;
+      color: var(--MH-Theme-Success-Dark, #1d6b3a);
     }
 
     .matchingRoundFormPickerVisibilityStatus.isHidden {
-      color: #8a6d3b;
+      color: var(--MH-Theme-Additional-Accent-Dark, #3f288f);
     }
 
     .matchingRoundFormPickerVisibilityButton {
       flex-shrink: 0;
       width: fit-content;
       max-width: 100%;
+    }
+
+    .matchingRoundFormPickerLibraryVisibility:not(.isVisible)
+      .matchingRoundFormPickerVisibilityButton:not(:disabled) {
+      background: var(--MH-Theme-Additional-Accent-Dark, #3f288f) !important;
+      color: var(--MH-Theme-Neutrals-White, #ffffff) !important;
+    }
+
+    .matchingRoundFormPickerLibraryVisibility.isVisible
+      .matchingRoundFormPickerVisibilityButton:not(:disabled) {
+      background: #F3F3F3 !important;
+      color: var(--MH-Theme-Neutrals-Dark, #6A6A6A) !important;
+      border: 1px solid var(--MH-Theme-Neutrals-Dark, #6A6A6A) !important;
     }
 
     .matchingRoundFormPickerLibraryActions {
@@ -1919,11 +1958,20 @@ const StyledClass = styled.div`
       cursor: not-allowed;
     }
 
-    .matchingRoundFormPickerLibraryRowMenu {
+    .matchingRoundFormPickerLibraryRowActions {
       flex-shrink: 0;
       padding: 6px 8px 6px 0;
       display: flex;
       align-items: center;
+      gap: 6px;
+    }
+
+    .matchingRoundFormPickerAddButton {
+      height: 30px !important;
+      padding: 4px 12px !important;
+      font-size: 12px !important;
+      line-height: 16px !important;
+      white-space: nowrap;
     }
 
     .matchingRoundFormPickerLibraryRowMain {
@@ -1978,26 +2026,14 @@ const StyledClass = styled.div`
       line-height: 16px;
     }
 
-    .matchingRoundFormOriginChip--public {
+    .matchingRoundFormOriginChip--public,
+    .matchingRoundFormOriginChip--custom,
+    .matchingRoundFormOriginChip--owned {
       background: #ffffff !important;
       background-color: #ffffff !important;
       border-color: #a1a1a1 !important;
       color: #5f6871 !important;
-    }
-
-    .matchingRoundFormOriginChip--custom {
-      background: var(--MH-Theme-Primary-Light, #def8fb) !important;
-      background-color: var(--MH-Theme-Primary-Light, #def8fb) !important;
-      border: none !important;
-      color: var(--MH-Theme-Primary-Dark, #336f8a) !important;
-    }
-
-    .matchingRoundFormOriginChip--owned {
-      background: var(--MH-Theme-Neutrals-Lighter, #f3f3f3) !important;
-      background-color: var(--MH-Theme-Neutrals-Lighter, #f3f3f3) !important;
-      border: none !important;
-      color: var(--MH-Theme-Neutrals-Dark, #171717) !important;
-      font-weight: 600 !important;
+      font-weight: 500 !important;
     }
 
     .classTabMatchingRoundFooter {
@@ -2229,12 +2265,13 @@ const StyledClass = styled.div`
       }
 
       .matchingRoundOppReviewButtonUnread {
-        border: 1px solid var(--MH-Theme-Primary-Base, #337c84) !important;
-        background: var(--MH-Theme-Primary-Light, #def8fb) !important;
+        border: 1px solid var(--MH-Theme-Additional-Accent-Dark, #3f288f) !important;
+        background: var(--MH-Theme-Additional-Accent-Light, #f5f2ff) !important;
         border-radius: 100px !important;
 
         &:hover {
-          background: var(--MH-Theme-Neutrals-Lighter, #f3f3f3) !important;
+          background: var(--MH-Theme-Additional-Accent-Light, #f5f2ff) !important;
+          filter: brightness(0.96);
         }
 
         .DesignSystem-Button-LeadingIcon {
@@ -2247,7 +2284,7 @@ const StyledClass = styled.div`
         display: block;
         width: 16px;
         height: 16px;
-        background-color: var(--MH-Theme-Primary-Base, #337c84);
+        background-color: var(--MH-Theme-Additional-Accent-Dark, #3f288f);
         mask: url("/assets/icons/message.svg") center / contain no-repeat;
         -webkit-mask: url("/assets/icons/message.svg") center / contain no-repeat;
       }
@@ -2885,6 +2922,12 @@ const StyledClass = styled.div`
     }
   }
   .dashboard {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+    box-sizing: border-box;
+
     .ag-cell-button {
       color: black;
       width: 100%;

@@ -5,14 +5,26 @@ import useTranslation from "next-translate/useTranslation";
 
 import DropdownMenu from "../../../../DesignSystem/DropdownMenu";
 import FormDefinitionPreviewModal from "../../../../Forms/DefinitionForm/FormDefinitionPreviewModal";
+import TeacherFormWizard from "../../../../Forms/TeacherFormWizard";
 import TemplateBoardMilestonesManageModal from "../Modals/TemplateBoardMilestonesManageModal";
 import { DELETE_CARD } from "../../../../Mutations/Proposal";
+import { FORK_REVIEW_FORM_FOR_BOARD } from "../../../../Mutations/FormDefinition";
 import { CLASS_TEMPLATE_PROJECTS_QUERY } from "../../../../Queries/Proposal";
+import {
+  CREATE_TEMPLATE_MILESTONE,
+  RESOLVE_MILESTONES_FOR_BOARD,
+} from "../../../../Queries/Milestone";
 import { useBoardMilestones } from "../../../../../lib/useBoardMilestones";
+import { getCurriculumType } from "../../../../../lib/curriculumTypes";
+import {
+  milestoneHasReviewQuestionnaire,
+  resolveReviewFormKey,
+} from "../../../../../lib/milestones";
 import ActionCardTypeBadge from "../utils/ActionCardTypeBadge";
 import {
   getActionCardsFromBoard,
   getActionCardLabel,
+  getMilestonesForTemplateBoard,
   resolveActionCardMilestone,
 } from "../../../../../lib/templateBoardActionCards";
 
@@ -43,24 +55,147 @@ export default function TemplateBoardMilestonesMenu({ board, classCode, classId 
   const { t } = useTranslation("classes");
   const { t: tBuilder } = useTranslation("builder");
   const router = useRouter();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState(null);
   const [deletingCardId, setDeletingCardId] = useState(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardDefinitionId, setWizardDefinitionId] = useState(null);
+  const [wizardMilestoneKey, setWizardMilestoneKey] = useState(null);
+  const [editingMilestoneId, setEditingMilestoneId] = useState(null);
+  const [copyingMilestoneId, setCopyingMilestoneId] = useState(null);
 
   const actionCards = useMemo(() => getActionCardsFromBoard(board), [board]);
-  const count = actionCards.length;
 
-  const needsMilestones = menuOpen || manageOpen || !!previewTarget;
   const { milestones } = useBoardMilestones(board?.id, {
-    skip: !board?.id || !needsMilestones,
+    skip: !board?.id,
   });
+  const boardMilestones = useMemo(
+    () => getMilestonesForTemplateBoard(board, milestones),
+    [board, milestones]
+  );
+  const count = boardMilestones.length;
 
   const [deleteCard] = useMutation(DELETE_CARD, {
     refetchQueries: classId
       ? [{ query: CLASS_TEMPLATE_PROJECTS_QUERY, variables: { classId } }]
       : [],
   });
+  const [forkReviewForm] = useMutation(FORK_REVIEW_FORM_FOR_BOARD);
+  const [createTemplateMilestone] = useMutation(CREATE_TEMPLATE_MILESTONE);
+
+  const boardRefetchQueries = [
+    ...(classId
+      ? [{ query: CLASS_TEMPLATE_PROJECTS_QUERY, variables: { classId } }]
+      : []),
+    ...(board?.id
+      ? [
+          {
+            query: RESOLVE_MILESTONES_FOR_BOARD,
+            variables: { boardId: board.id },
+          },
+        ]
+      : []),
+  ];
+
+  const openWizard = (definitionId, milestoneKey) => {
+    setPreviewTarget(null);
+    setManageOpen(false);
+    setWizardDefinitionId(definitionId);
+    setWizardMilestoneKey(milestoneKey || null);
+    setWizardOpen(true);
+  };
+
+  const openEditForm = async ({ card, milestone }) => {
+    if (!board?.id || !milestone?.id || editingMilestoneId) return;
+    if (milestone?.scope !== "template") return;
+    if (!milestoneHasReviewQuestionnaire(milestone)) return;
+    setEditingMilestoneId(milestone.id);
+    try {
+      const alreadyOnBoard =
+        milestone.formDefinition?.scope === "project_board" &&
+        milestone.formDefinition?.id;
+      if (alreadyOnBoard) {
+        openWizard(milestone.formDefinition.id, milestone.key);
+        return;
+      }
+      const result = await forkReviewForm({
+        variables: {
+          templateBoardId: board.id,
+          milestoneId: milestone.id,
+        },
+        refetchQueries: boardRefetchQueries,
+      });
+      const forked = result?.data?.forkReviewFormForBoard;
+      if (!forked?.id) {
+        throw new Error("Could not open the review form for editing.");
+      }
+      openWizard(forked.id, milestone.key);
+    } catch (err) {
+      alert(err?.message);
+    } finally {
+      setEditingMilestoneId(null);
+    }
+  };
+
+  const copyMilestoneToCustomize = async ({ card, milestone, section }) => {
+    if (!board?.id || !milestone?.id || copyingMilestoneId) return;
+    if (milestone.scope === "template") return;
+    if (!milestoneHasReviewQuestionnaire(milestone)) return;
+    const sectionId =
+      section?.id ||
+      actionCards.find(({ card: actionCard }) => actionCard.id === card?.id)
+        ?.section?.id;
+    if (!sectionId) {
+      alert(
+        t(
+          "projects.milestonesMenu.copyNeedsColumn",
+          {},
+          { default: "This milestone needs a column before it can be copied." }
+        )
+      );
+      return;
+    }
+    setCopyingMilestoneId(milestone.id);
+    try {
+      const sourceTitle =
+        milestone.title || getActionCardLabel(card, tBuilder) || "";
+      const result = await createTemplateMilestone({
+        variables: {
+          input: {
+            templateBoardId: board.id,
+            title: t(
+              "projects.milestonesMenu.copyTitle",
+              { title: sourceTitle },
+              { default: "{{title}} (copy)" }
+            ),
+            description: milestone.description || "",
+            sectionId,
+            clonedFromMilestoneId: milestone.id,
+            sourceFormDefinitionKey: resolveReviewFormKey(
+              milestone,
+              getCurriculumType(board)
+            ),
+            canReviewPermissionNames: (milestone.canReview || [])
+              .map((permission) => permission?.name)
+              .filter(Boolean),
+            showInFeedbackCenter: true,
+            statusTarget: "board",
+          },
+        },
+        refetchQueries: boardRefetchQueries,
+        awaitRefetchQueries: true,
+      });
+      const created = result?.data?.createTemplateMilestone;
+      if (!created?.formDefinition?.id) {
+        throw new Error("Could not copy this milestone.");
+      }
+      openWizard(created.formDefinition.id, created.key);
+    } catch (err) {
+      alert(err?.message);
+    } finally {
+      setCopyingMilestoneId(null);
+    }
+  };
 
   const handleDeleteCard = async (card, actionLabel) => {
     if (!card?.id) return;
@@ -115,21 +250,38 @@ export default function TemplateBoardMilestonesMenu({ board, classCode, classId 
         }),
       });
     } else {
-      actionCards.forEach(({ card }) => {
-        const actionLabel = getActionCardLabel(card, tBuilder);
+      boardMilestones.forEach((milestone) => {
+        const card = actionCards.find(({ card: actionCard }) => {
+          const resolved = resolveActionCardMilestone(actionCard, milestones);
+          if (!resolved) return false;
+          if (milestone.id && resolved.id === milestone.id) return true;
+          return (
+            milestone.key &&
+            resolved.key &&
+            String(resolved.key).toLowerCase() ===
+              String(milestone.key).toLowerCase()
+          );
+        })?.card;
+        const actionLabel = card
+          ? getActionCardLabel(card, tBuilder)
+          : milestone.title || milestone.key;
         items.push({
-          key: `milestone-${card.id}`,
+          key: `milestone-${milestone.id || milestone.key}`,
           label: (
             <>
               {actionLabel}
-              {" · "}
-              <ActionCardTypeBadge card={card} />
+              {card ? (
+                <>
+                  {" · "}
+                  <ActionCardTypeBadge card={card} />
+                </>
+              ) : null}
             </>
           ),
           onClick: () => {
             openPreview({
               card,
-              milestone: resolveActionCardMilestone(card, milestones),
+              milestone,
               actionLabel,
             });
           },
@@ -154,6 +306,9 @@ export default function TemplateBoardMilestonesMenu({ board, classCode, classId 
     (previewTarget?.card
       ? resolveActionCardMilestone(previewTarget.card, milestones)
       : null);
+  const previewIsCustom = previewMilestone?.scope === "template";
+  const previewHasQuestionnaire =
+    milestoneHasReviewQuestionnaire(previewMilestone);
 
   const panelHeader =
     count === 0
@@ -175,7 +330,6 @@ export default function TemplateBoardMilestonesMenu({ board, classCode, classId 
           padding: "6px 10px",
           minWidth: "auto",
         }}
-        onOpenChange={setMenuOpen}
         trigger={
           <span
             style={{
@@ -204,12 +358,16 @@ export default function TemplateBoardMilestonesMenu({ board, classCode, classId 
           setManageOpen(false);
           openPreview(target);
         }}
+        onEdit={openEditForm}
+        onCopy={copyMilestoneToCustomize}
         onAddMilestone={() => {
           setManageOpen(false);
           goToAddMilestone();
         }}
         onDeleteCard={handleDeleteCard}
         deletingCardId={deletingCardId}
+        editingMilestoneId={editingMilestoneId}
+        copyingMilestoneId={copyingMilestoneId}
       />
 
       <FormDefinitionPreviewModal
@@ -218,6 +376,49 @@ export default function TemplateBoardMilestonesMenu({ board, classCode, classId 
         board={board}
         milestone={previewMilestone}
         actionLabel={previewTarget?.actionLabel}
+        onEdit={
+          previewMilestone?.id &&
+          previewHasQuestionnaire &&
+          previewIsCustom
+            ? () =>
+                openEditForm({
+                  card: previewTarget?.card,
+                  milestone: previewMilestone,
+                })
+            : undefined
+        }
+        editBusy={
+          !!previewMilestone?.id &&
+          editingMilestoneId === previewMilestone.id
+        }
+        onCopy={
+          previewMilestone?.id &&
+          previewHasQuestionnaire &&
+          !previewIsCustom
+            ? () =>
+                copyMilestoneToCustomize({
+                  card: previewTarget?.card,
+                  milestone: previewMilestone,
+                })
+            : undefined
+        }
+        copyBusy={
+          !!previewMilestone?.id &&
+          copyingMilestoneId === previewMilestone.id
+        }
+      />
+
+      <TeacherFormWizard
+        open={wizardOpen}
+        onClose={() => {
+          setWizardOpen(false);
+          setWizardDefinitionId(null);
+          setWizardMilestoneKey(null);
+        }}
+        mode="review"
+        proposalBoardId={board?.id}
+        milestoneKey={wizardMilestoneKey}
+        definitionId={wizardDefinitionId}
       />
     </>
   );

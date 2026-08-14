@@ -15,8 +15,8 @@ import {
   confirmReviewStatusTransition,
   getReviewPrimaryAction,
   reviewEmailCopy,
-  reviewSuccessMessage,
 } from "../../../../lib/opportunityReviewActions";
+import { OPPORTUNITY_FLASH } from "../../../../lib/opportunityFlash";
 import {
   resolveActiveReviewRound,
   REVIEW_NOTE_KIND,
@@ -94,7 +94,7 @@ const TitleRow = styled.div`
     margin: 0;
     min-width: 0;
     max-width: 100%;
-    font-family: "Lato", sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: clamp(20px, 2.8vw, 26px);
     font-weight: 600;
     color: #171717;
@@ -149,7 +149,7 @@ const Card = styled.section`
 
   h2 {
     margin: 0;
-    font-family: "Lato", sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 18px;
     color: #171717;
   }
@@ -178,7 +178,7 @@ function rolesForViewer(connectRole) {
 export default function NetworkReview({ opportunityId, query, user }) {
   const router = useRouter();
   const { t } = useTranslation("connect");
-  const me = useContext(UserContext);
+  const { user: me } = useContext(UserContext);
   const viewer = user || me;
   const { sendEmail } = useEmail();
   const connectRole = useConnectRole();
@@ -290,8 +290,23 @@ export default function NetworkReview({ opportunityId, query, user }) {
         },
       });
       await notifySponsor(nextStatus);
-      const success = reviewSuccessMessage(nextStatus, t);
-      if (success) window.alert(success);
+
+      const flashKey =
+        nextStatus === "pre_selected"
+          ? OPPORTUNITY_FLASH.PRE_SELECTED
+          : nextStatus === "accepted"
+            ? OPPORTUNITY_FLASH.ACCEPTED
+            : nextStatus === "published"
+              ? OPPORTUNITY_FLASH.PUBLISHED
+              : null;
+
+      router.push({
+        pathname: "/dashboard/connect/opportunities",
+        query: {
+          tab: "review",
+          ...(flashKey ? { flash: flashKey } : {}),
+        },
+      });
     } finally {
       setBusy(false);
     }

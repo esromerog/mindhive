@@ -53,6 +53,11 @@ export const StyledNavbar = styled.div`
       }
     }
 
+    /* Mirror of has-icon: an icon at the end pulls that side in to 16px too. */
+    &.has-trailing {
+      padding-right: 16px;
+    }
+
     &.selected,
     &:active {
       background-color: var(--MH-Theme-Accent-Medium, #f9d978);
@@ -80,10 +85,16 @@ export const StyledNavbar = styled.div`
       border-color: var(--MH-Theme-Accent-Medium, #f9d978);
       background: none;
     }
-    &:hover {
-      border-color: var(--MH-Theme-Neutrals-Light, #e6e6e6);
+    &:hover:not(.selected) {
+      border-bottom-width: 2px;
+      border-color: var(--MH-Theme-Neutrals-Medium, #a1a1a1);
       background: none;
     }
+  }
+
+  .navbar-container.underline.show-rule .navbar-item:not(.selected):not(:hover) {
+    border-bottom-width: 1px;
+    border-color: var(--MH-Theme-Neutrals-Light, #e6e6e6);
   }
 
   /* Vertical orientation — sidebars and menu rails. */
@@ -101,9 +112,9 @@ export const StyledNavbar = styled.div`
     .navbar-item {
       width: 100%;
       justify-content: flex-start;
-      /* MH-Theme/title/base */
-      font-size: 16px;
-      line-height: 24px;
+      /* MH-Theme/label/base — same size as buttons carry. */
+      font-size: 14px;
+      line-height: 20px;
       padding-left: 16px;
       padding-right: 24px;
     }
@@ -181,6 +192,8 @@ const NavbarContext = createContext({ collapsed: false });
  * @param {"horizontal"|"vertical"} [orientation="horizontal"] - Layout direction.
  * @param {boolean} [collapsed=false] - Vertical only. Renders an icon-only rail;
  *   item labels become accessible names instead of visible text.
+ * @param {boolean} [showRule=false] - Underline variant only. Gives unselected
+ *   items a resting 1px divider line instead of a transparent one.
  * @param {React.ReactNode} children - NavbarItem and NavbarSection elements.
  *
  * @example
@@ -202,6 +215,7 @@ export default function Navbar({
   variant = "tonal",
   orientation = "horizontal",
   collapsed = false,
+  showRule = false,
   children,
   className,
   ...props
@@ -221,6 +235,7 @@ export default function Navbar({
             variant,
             isVertical && "vertical",
             isVertical && collapsed && "collapsed",
+            showRule && "show-rule",
           )}
         >
           {children}
@@ -311,6 +326,7 @@ export function NavbarItem({
           "navbar-item",
           selected && "selected",
           leadingIcon && "has-icon",
+          trailingContent && "has-trailing",
           className,
         )}
         aria-current={selected ? "page" : undefined}

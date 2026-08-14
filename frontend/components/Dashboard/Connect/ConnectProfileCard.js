@@ -1,12 +1,14 @@
 import { useMemo } from "react";
-import Link from "next/link";
-import styled, { css } from "styled-components";
+import styled from "styled-components";
 import useTranslation from "next-translate/useTranslation";
 
+import Button from "../../DesignSystem/Button";
 import Chip from "../../DesignSystem/Chip";
-import IconButton from "../../DesignSystem/IconButton";
+import { ArrowOutwardIcon } from "../../DesignSystem/Icons";
+import ConnectCard from "./ConnectCard";
 import ManageFavorite from "./ManageFavorite";
 import { getProfileImageUrl } from "../../../lib/profileStudyImageUrls";
+import { normalizeOrganizationNames } from "../../../lib/organizationLabels";
 
 const FALLBACK_COLORS = [
   "#DEF8FB",
@@ -32,106 +34,6 @@ const getGradientForProfile = (profileKey) => {
   return FALLBACK_COLORS[index];
 };
 
-const CardContainer = styled.article`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  width: 100%;
-  min-width: 0;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid var(--MH-Theme-Neutrals-Light, #e6e6e6);
-  background: var(--MH-Theme-Neutrals-White, #ffffff);
-  box-sizing: border-box;
-`;
-
-const infoClusterStyles = css`
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  min-width: 0;
-  flex: 1;
-  text-decoration: none;
-  color: inherit;
-`;
-
-const InfoClusterLink = styled(Link)`
-  ${infoClusterStyles}
-  cursor: pointer;
-
-  &:focus-visible {
-    outline: 2px solid var(--MH-Theme-Primary-Dark, #336f8a);
-    outline-offset: 2px;
-    border-radius: 8px;
-  }
-`;
-
-const InfoClusterStatic = styled.div`
-  ${infoClusterStyles}
-`;
-
-const Avatar = styled.div`
-  width: 86px;
-  height: 86px;
-  border-radius: 50%;
-  overflow: hidden;
-  flex-shrink: 0;
-  
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .fallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 32px;
-    font-family: "Inter", sans-serif;
-    font-weight: 600;
-    color: var(--MH-Theme-Neutrals-Black, #171717);
-  }
-`;
-
-const TextColumn = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-`;
-
-const NameBlock = styled.div`
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-
-  .name {
-    margin: 0;
-    font-family: "Inter", sans-serif;
-    font-weight: 600;
-    font-size: 16px;
-    line-height: 24px;
-    color: var(--MH-Theme-Neutrals-Black, #171717);
-    word-break: break-word;
-  }
-
-  .occupation {
-    margin: 0;
-    font-family: "Inter", sans-serif;
-    font-weight: 400;
-    font-size: 16px;
-    line-height: 24px;
-    color: var(--MH-Theme-Neutrals-Dark, #6a6a6a);
-    word-break: break-word;
-  }
-`;
-
 const ChipLeading = styled.img`
   width: 24px;
   height: 24px;
@@ -140,37 +42,6 @@ const ChipLeading = styled.img`
   display: block;
   flex-shrink: 0;
 `;
-
-const Tagline = styled.p`
-  margin: 0;
-  font-family: "Inter", sans-serif;
-  font-weight: 400;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--MH-Theme-Neutrals-Dark, #6a6a6a);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  word-break: break-word;
-`;
-
-const Actions = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-`;
-
-const ExternalLinkIcon = (
-  <img
-    src="/assets/icons/builder/medium-arrow-outward.svg"
-    alt=""
-    width={24}
-    height={24}
-    aria-hidden
-  />
-);
 
 function hrefToPath(href) {
   if (!href) return null;
@@ -186,11 +57,7 @@ function hrefToPath(href) {
   return search ? `${pathname}?${search}` : pathname;
 }
 
-export default function ConnectProfileCard({
-  user,
-  profile,
-  actions = null,
-}) {
+export default function ConnectProfileCard({ user, profile, actions = null }) {
   const { t } = useTranslation("connect");
 
   const fullName =
@@ -199,17 +66,7 @@ export default function ConnectProfileCard({
       : profile?.name ||
         t("profileCard.defaultName", {}, { default: "MindHive Member" });
 
-  const occupation = profile?.occupation?.trim() || null;
-
-  const linkedOrg = profile?.organizations?.[0] || null;
-  const orgLabel =
-    profile?.organization?.trim() || linkedOrg?.name?.trim() || null;
-  const orgLogoUrl = linkedOrg?.logo?.url || null;
-
-  const tagline = profile?.tagline?.trim() || null;
-
   const avatar = getProfileImageUrl(profile);
-  const fallbackLetter = fullName.charAt(0).toUpperCase();
   const fallbackGradient = useMemo(() => {
     const key = profile?.id || profile?.publicId || fullName;
     return getGradientForProfile(key);
@@ -218,6 +75,27 @@ export default function ConnectProfileCard({
   if (!profile) {
     return null;
   }
+
+  const occupation = profile?.occupation?.trim() || null;
+  const description =
+    profile?.tagline?.trim() || profile?.bioInformal?.trim() || null;
+
+
+  const linkedOrgTags = (profile?.organizations || [])
+    .filter((org) => org?.name?.trim())
+    .map((org) => ({
+      key: org.id,
+      label: org.name.trim(),
+      logoUrl: org.logo?.url || null,
+    }));
+
+  const orgTags = linkedOrgTags.length
+    ? linkedOrgTags
+    : normalizeOrganizationNames(profile?.organization).map((label, i) => ({
+        key: `organization-${i}`,
+        label,
+        logoUrl: null,
+      }));
 
   const profileHref = profile.publicId
     ? {
@@ -233,75 +111,66 @@ export default function ConnectProfileCard({
     { default: "View profile of {{name}}" }
   );
 
-  const infoContent = (
-    <>
-      <Avatar>
-        {avatar ? (
-          <img src={avatar} alt="" />
-        ) : (
-          <div
-            className="fallback"
-            style={{ background: fallbackGradient }}
-            aria-hidden
-          >
-            {fallbackLetter}
-          </div>
-        )}
-      </Avatar>
-
-      <TextColumn>
-        <NameBlock>
-          <p className="name">{fullName}</p>
-          {occupation && <p className="occupation">{occupation}</p>}
-        </NameBlock>
-
-        {orgLabel && (
-          <Chip
-            label={orgLabel}
-            style={{ width: "fit-content" }}
-            leading={
-              <ChipLeading
-                src={orgLogoUrl || "/assets/connect/building.svg"}
-                alt=""
-              />
-            }
-          />
-        )}
-
-        {tagline && <Tagline>{tagline}</Tagline>}
-      </TextColumn>
-    </>
+  const profileTypeLabel = t(
+    "profileCard.profileButton",
+    {},
+    { default: "Profile" }
   );
 
   return (
-    <CardContainer>
-      {profileHref ? (
-        <InfoClusterLink href={profileHref} aria-label={viewProfileLabel}>
-          {infoContent}
-        </InfoClusterLink>
-      ) : (
-        <InfoClusterStatic>{infoContent}</InfoClusterStatic>
-      )}
-
-      <Actions>
-        {actions}
-        <ManageFavorite user={user} profileId={profile?.id} />
-        {profileHref ? (
-          <IconButton
-            variant="outline"
-            style={{ borderColor: "#A1A1A1" }}
-            icon={ExternalLinkIcon}
-            ariaLabel={viewProfileLabel}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (profileUrl) {
-                window.open(profileUrl, "_blank", "noopener,noreferrer");
-              }
-            }}
-          />
-        ) : null}
-      </Actions>
-    </CardContainer>
+    <ConnectCard
+      typeLabel={profileTypeLabel}
+      href={profileHref}
+      ariaLabel={viewProfileLabel}
+      avatar={{
+        src: avatar,
+        fallbackLabel: fullName.charAt(0).toUpperCase(),
+        fallbackBackground: fallbackGradient,
+      }}
+      title={fullName}
+      subtitle={occupation}
+      chips={
+        orgTags.length
+          ? orgTags.map((tag) => (
+              <Chip
+                key={tag.key}
+                shape="pill"
+                label={tag.label}
+                title={tag.label}
+                style={{ maxWidth: "100%", height: "auto", minHeight: 32 }}
+                leading={
+                  <ChipLeading
+                    src={tag.logoUrl || "/assets/connect/building.svg"}
+                    alt=""
+                  />
+                }
+              />
+            ))
+          : null
+      }
+      description={description}
+      actions={
+        <>
+          {actions}
+          <ManageFavorite user={user} profileId={profile?.id} />
+          {profileHref ? (
+            <Button
+              variant="outline"
+              leadingIcon={<ArrowOutwardIcon />}
+              aria-label={viewProfileLabel}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (profileUrl) {
+                  window.open(profileUrl, "_blank", "noopener,noreferrer");
+                }
+              }}
+            >
+              {profileTypeLabel}
+            </Button>
+          ) : null}
+        </>
+      }
+    />
   );
 }

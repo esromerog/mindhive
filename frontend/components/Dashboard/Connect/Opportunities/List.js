@@ -9,12 +9,14 @@ import { MY_OPPORTUNITIES } from "../../../Queries/Opportunity";
 import { DELETE_OPPORTUNITY, UPDATE_OPPORTUNITY } from "../../../Mutations/Opportunity";
 import Button from "../../../DesignSystem/Button";
 import DropdownSelect from "../../../DesignSystem/DropdownSelect";
+import MessageCard from "../../../DesignSystem/MessageCard";
 import FilterBar from "../FilterBar";
 import { deriveRoles } from "../useConnectRole";
 import OpportunityCompactCard, {
   buildMyOpportunityMetaLine,
   OpportunityCompactGrid,
 } from "./OpportunityCompactCard";
+import { useOpportunityFlashQuery } from "../../../../lib/opportunityFlash";
 
 const Shell = styled.div`
   display: flex;
@@ -36,7 +38,7 @@ const TopBar = styled.div`
 
   h1 {
     margin: 0;
-    font-family: "Lato", sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: clamp(28px, 4vw, 40px);
     font-weight: 600;
     color: #171717;
@@ -169,6 +171,7 @@ function isStatusEditable(opportunity, isAdmin) {
 export default function OpportunitiesList({ user }) {
   const router = useRouter();
   const { t } = useTranslation("connect");
+  const { flashMessage, clearFlash } = useOpportunityFlashQuery(t);
   const { isTeacher, isAdmin, isClassNetworkAdmin } = deriveRoles(user);
   const showReviewTab = isTeacher || isAdmin || isClassNetworkAdmin;
   const { data, loading, refetch } = useQuery(MY_OPPORTUNITIES, {
@@ -344,6 +347,17 @@ export default function OpportunitiesList({ user }) {
           </Button>
         </div>
       </TopBar>
+
+      {flashMessage ? (
+        <MessageCard
+          variant="success"
+          message={flashMessage}
+          onClose={clearFlash}
+          closeAriaLabel={t("myOpportunitiesList.flash.dismiss", {}, {
+            default: "Dismiss",
+          })}
+        />
+      ) : null}
 
       {opportunities.length > 0 && (
         <FilterBar>
