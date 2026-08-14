@@ -115,6 +115,7 @@ export default function VisualViewer({
     () => ({
       visual,
       canEdit: false,
+      user,
       files,
       updateFile: noop,
       declared,
@@ -129,6 +130,7 @@ export default function VisualViewer({
     }),
     [
       visual,
+      user,
       files,
       noop,
       declared,

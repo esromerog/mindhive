@@ -11,7 +11,13 @@ import { loader } from "@monaco-editor/react";
 const MONACO_VS_PATH = "/monaco-editor/vs";
 
 if (typeof window !== "undefined") {
-  loader.config({ paths: { vs: MONACO_VS_PATH } });
+  // Absolute, not root-relative: Monaco boots language workers from a Blob and
+  // inlines this path as the worker's `MonacoEnvironment.baseUrl` as-is. A blob:
+  // URL has an opaque path, so a worker-side `fetch("/monaco-editor/vs/...")`
+  // has nothing to resolve against and throws "is not a valid URL" (Firefox).
+  loader.config({
+    paths: { vs: `${window.location.origin}${MONACO_VS_PATH}` },
+  });
 }
 
 const DATA_JOURNAL_MONACO_THEME = "mindhiveDataJournal";
@@ -105,9 +111,10 @@ export default function MonacoPythonEditor({
   className,
   readOnly = false,
   // The visual builder edits p5 sketches through this same editor — the loader
-  // config, self-hosted assets and theme are all worth sharing, and only the
-  // language differs.
+  // config, self-hosted assets and theme are all worth sharing. It writes
+  // JavaScript in a full-height pane, so language and editor options differ.
   language = "python",
+  options: optionOverrides,
 }) {
   const beforeMount = useCallback((monaco) => {
     monaco.editor.defineTheme(DATA_JOURNAL_MONACO_THEME, {
@@ -135,10 +142,18 @@ export default function MonacoPythonEditor({
     });
   }, []);
 
-  const options = useMemo(() => ({ ...baseEditorOptions }), []);
+  // `readOnly` is a Monaco editor option, not an `<Editor>` prop — passing it
+  // through as a prop silently does nothing.
+  const options = useMemo(
+    () => ({ ...baseEditorOptions, readOnly, ...optionOverrides }),
+    [readOnly, optionOverrides],
+  );
 
   return (
-    <div className="data-journal-monaco-root">
+    // Monaco sizes itself from the `height` prop, but it hands that to a
+    // `<section>` inside here — so a percentage height only resolves if this
+    // wrapper carries the height too, otherwise the editor lays out at zero.
+    <div className="data-journal-monaco-root" style={{ height }}>
       <Editor
         className={className}
         height={height}
@@ -148,7 +163,6 @@ export default function MonacoPythonEditor({
         value={value}
         onChange={onChange}
         options={options}
-        readOnly={readOnly}
         beforeMount={beforeMount}
         loading={monacoInitLoadingPlaceholder(height)}
       />

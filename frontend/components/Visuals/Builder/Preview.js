@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import useTranslation from "next-translate/useTranslation";
 
 import Button from "../../DesignSystem/Button";
@@ -46,17 +46,20 @@ const CONSOLE_STYLE = {
   lineHeight: "18px",
 };
 
-export default function Preview({ files, values, onDeclare, onHide }) {
+export default function Preview({
+  files,
+  values,
+  logs = [],
+  onDeclare,
+  onLog,
+  onHide,
+}) {
   const { t } = useTranslation("visuals");
   const [fullscreen, setFullscreen] = useState(false);
-  const [logs, setLogs] = useState([]);
-
-  // A rebuild is a fresh run — carrying the previous run's errors over would
-  // leave a fixed mistake on screen.
-  useEffect(() => setLogs([]), [files]);
 
   // Errors are what an author actually needs to see; ordinary console output is
-  // relayed too but never on its own worth pushing the canvas up.
+  // relayed too but never on its own worth pushing the canvas up — the Code
+  // panel's console has all of it.
   const errors = logs.filter((entry) => entry.kind === "error");
 
   return (
@@ -92,9 +95,7 @@ export default function Preview({ files, values, onDeclare, onHide }) {
           files={files}
           values={values}
           onDeclare={onDeclare}
-          onLog={(entry) =>
-            setLogs((current) => [...current.slice(-49), entry])
-          }
+          onLog={onLog}
         />
       </div>
       {errors.length ? (

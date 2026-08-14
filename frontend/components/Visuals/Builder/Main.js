@@ -19,6 +19,7 @@ import {
 import { VISUAL } from "../../Queries/YQVisual";
 import {
   CREATE_VISUAL_CODE_FILE,
+  DELETE_VISUAL_CODE_FILE,
   UPDATE_VISUAL,
   UPDATE_VISUAL_CODE_FILE,
 } from "../../Mutations/YQVisual";
@@ -47,10 +48,13 @@ const TABS = [
   { id: "settings", label: "Settings", icon: <SettingsIcon /> },
 ];
 
+// Viewport units rather than 100%: nothing between here and <body> carries a
+// height, so a percentage would collapse onto the content. The rest of the
+// builder areas size themselves the same way.
 const SHELL_STYLE = {
   display: "flex",
   flexDirection: "column",
-  height: "100%",
+  height: "100vh",
   minHeight: 0,
   background: "var(--MH-Theme-Neutrals-Light-Green, #F6F9F8)",
 };
@@ -78,11 +82,23 @@ const WORK_AREA_STYLE = {
 const RUN_DEBOUNCE_MS = 700;
 const SAVE_DEBOUNCE_MS = 1200;
 
+// The languages VisualCodeFile accepts, by file extension. Anything else is
+// treated as JavaScript, which is what an author adding a file almost always
+// means; the runtime exposes the rest as strings the sketch can read by name.
+const LANGUAGES = {
+  js: "javascript",
+  frag: "glsl",
+  vert: "glsl",
+  glsl: "glsl",
+  css: "css",
+  html: "html",
+};
+
 export default function VisualBuilder({ query, user }) {
   const { t } = useTranslation("visuals");
   const visualId = query?.selector;
 
-  const { data, loading, error } = useQuery(VISUAL, {
+  const { data, loading, error, refetch } = useQuery(VISUAL, {
     variables: { id: visualId },
     skip: !visualId,
     fetchPolicy: "cache-and-network",
@@ -91,6 +107,7 @@ export default function VisualBuilder({ query, user }) {
   const [updateVisual] = useMutation(UPDATE_VISUAL);
   const [createCodeFile] = useMutation(CREATE_VISUAL_CODE_FILE);
   const [updateCodeFile] = useMutation(UPDATE_VISUAL_CODE_FILE);
+  const [deleteCodeFile] = useMutation(DELETE_VISUAL_CODE_FILE);
 
   const visual = data?.visual;
   const canEdit =
@@ -111,6 +128,11 @@ export default function VisualBuilder({ query, user }) {
   const [hasDeclaration, setHasDeclaration] = useState(false);
   const [bindings, setBindings] = useState({});
 
+  // Console output from the running sketch. It lives here rather than in the
+  // Preview because the author reads it while looking at the code, and the
+  // Preview can be hidden entirely.
+  const [logs, setLogs] = useState([]);
+
   const seededRef = useRef(false);
   const saveTimers = useRef({});
 
@@ -129,10 +151,14 @@ export default function VisualBuilder({ query, user }) {
       setRunFiles(ordered);
       return;
     }
-    if (!canEdit || seededRef.current) return;
+    // Never seed off a cache-only render. Creating a file doesn't write into
+    // this query's cached `codeFiles`, so a remount would read the stale empty
+    // list and seed a *second* parameters.js and sketch.js. Waiting for the
+    // network response is what makes "this visual has no files" trustworthy.
+    if (loading || !canEdit || seededRef.current) return;
     seededRef.current = true;
     seedFiles();
-  }, [visual?.id, visual?.codeFiles?.length, canEdit]);
+  }, [visual?.id, visual?.codeFiles?.length, canEdit, loading]);
 
   /**
    * A visual with no child files is either brand new or a YQ-era one whose
@@ -183,6 +209,9 @@ export default function VisualBuilder({ query, user }) {
       .filter(Boolean);
     setFiles(seeded);
     setRunFiles(seeded);
+    // Leave the cache holding the files that now exist, so nothing downstream
+    // reads this visual as empty again.
+    refetch().catch(() => {});
   }
 
   // ── Editing ────────────────────────────────────────────────────────────────
@@ -206,6 +235,48 @@ export default function VisualBuilder({ query, user }) {
       }, SAVE_DEBOUNCE_MS);
     },
     [updateCodeFile]
+  );
+
+  /**
+   * Adds a file to the sketch. Everything an author adds is a `module`: the
+   * entry and the declaration are roles the runtime and the Parameters tab go
+   * looking for, and there is exactly one of each.
+   *
+   * Resolves with the created file so the caller can select it.
+   */
+  const addFile = useCallback(
+    async (name) => {
+      const extension = name.split(".").pop()?.toLowerCase();
+      const order =
+        files.reduce((last, file) => Math.max(last, file.order ?? 0), 0) + 1;
+
+      const { data: created } = await createCodeFile({
+        variables: {
+          data: {
+            visual: { connect: { id: visualId } },
+            name,
+            language: LANGUAGES[extension] || "javascript",
+            role: "module",
+            order,
+            content: "",
+          },
+        },
+      });
+
+      const file = created?.createVisualCodeFile;
+      if (file) setFiles((current) => [...current, file]);
+      return file;
+    },
+    [createCodeFile, files, visualId]
+  );
+
+  const removeFile = useCallback(
+    (fileId) => {
+      clearTimeout(saveTimers.current[fileId]);
+      setFiles((current) => current.filter((file) => file.id !== fileId));
+      deleteCodeFile({ variables: { id: fileId } }).catch(() => {});
+    },
+    [deleteCodeFile]
   );
 
   // Hand the settled files to the frame, separately from the ones being typed
@@ -238,10 +309,32 @@ export default function VisualBuilder({ query, user }) {
     [bindings, updateVisual, visualId]
   );
 
+  // Whether the people a visual is shared with see its documentation at all.
+  // Lives on the visual rather than in the Yjs room: it is a sharing decision,
+  // not part of the text, and the Settings tab writes the same field.
+  const setDocsVisible = useCallback(
+    (next) => {
+      updateVisual({
+        variables: { id: visualId, data: { docsVisible: next } },
+      }).catch(() => {});
+    },
+    [updateVisual, visualId]
+  );
+
   const onDeclare = useCallback((parameters) => {
     setDeclared(parameters);
     setHasDeclaration(true);
   }, []);
+
+  const pushLog = useCallback((entry) => {
+    setLogs((current) => [...current.slice(-49), entry]);
+  }, []);
+
+  const clearLogs = useCallback(() => setLogs([]), []);
+
+  // A rebuild is a fresh run — carrying the previous run's errors over would
+  // leave a fixed mistake on screen.
+  useEffect(() => setLogs([]), [runFiles]);
 
   const values = useMemo(
     () => resolveValues(declared, bindings),
@@ -262,32 +355,44 @@ export default function VisualBuilder({ query, user }) {
     () => ({
       visual,
       canEdit,
+      user,
       files,
       updateFile,
+      addFile,
+      removeFile,
       declared,
       hasDeclaration,
       bindings,
       updateBinding,
+      setDocsVisible,
       values,
       openPanel,
       closePanel,
       revealFile,
       focusFileId,
+      logs,
+      clearLogs,
     }),
     [
       visual,
       canEdit,
+      user,
       files,
       updateFile,
+      addFile,
+      removeFile,
       declared,
       hasDeclaration,
       bindings,
       updateBinding,
+      setDocsVisible,
       values,
       openPanel,
       closePanel,
       revealFile,
       focusFileId,
+      logs,
+      clearLogs,
     ]
   );
 
@@ -318,7 +423,7 @@ export default function VisualBuilder({ query, user }) {
       <div className="Visuals-Builder" style={SHELL_STYLE}>
         <TopBar title={visual.title} onShare={() => setTab("settings")} />
 
-        <Navbar style={NAVBAR_STYLE}>
+        <Navbar variant="underline" style={NAVBAR_STYLE} showRule>
           {TABS.map((entry) => (
             <NavbarItem
               key={entry.id}
@@ -354,7 +459,9 @@ export default function VisualBuilder({ query, user }) {
               <Preview
                 files={runFiles}
                 values={values}
+                logs={logs}
                 onDeclare={onDeclare}
+                onLog={pushLog}
                 onHide={() => setPreviewVisible(false)}
               />
             }

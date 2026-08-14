@@ -57,8 +57,14 @@ export default function Popover({
     const place = () => {
       const anchor = anchorRef.current?.getBoundingClientRect();
       if (!anchor) return;
+      // Right of the anchor, but never past the viewport edge — an anchor in a
+      // right-hand toolbar would otherwise put the whole surface off-screen.
+      const surfaceWidth = Math.min(width, window.innerWidth - GAP * 4);
       setPosition({
-        left: anchor.right + GAP,
+        left: Math.max(
+          GAP,
+          Math.min(anchor.right + GAP, window.innerWidth - GAP - surfaceWidth),
+        ),
         top: anchor.top,
         maxHeight: Math.min(
           MAX_HEIGHT,
@@ -74,7 +80,7 @@ export default function Popover({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [open, anchorRef]);
+  }, [open, anchorRef, width]);
 
   useEffect(() => {
     if (!open) return undefined;
