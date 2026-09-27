@@ -5,6 +5,7 @@ import useTranslation from "next-translate/useTranslation";
 
 import Button from "../../../DesignSystem/Button";
 import Checkbox from "../../../DesignSystem/Checkbox";
+import Chip from "../../../DesignSystem/Chip";
 import IconButton from "../../../DesignSystem/IconButton";
 import Input from "../../../DesignSystem/Input";
 import {
@@ -17,8 +18,16 @@ import {
 } from "../../../DesignSystem/Icons";
 
 import { useVisualBuilder } from "../../Context/VisualBuilderContext";
-import { bindingFor, labelFor, typeLabel } from "../../Helpers/bindings";
+import {
+  bindingFor,
+  isNumeric,
+  isStreamMappable,
+  labelFor,
+  typeLabel,
+} from "../../Helpers/bindings";
 import { removeParameter } from "../../Runtime/parametersFile";
+import { StatusIndicator } from "../../../Studies/Run/DataSources/ConnectScreen";
+import { channelKey, outputKey } from "../../../../lib/yqOutputs";
 
 const ROOT_STYLE = {
   boxSizing: "border-box",
@@ -142,13 +151,26 @@ const FROM_CODE_STYLE = {
 const FIELD_STYLE = { display: "flex", flexDirection: "column", gap: 4 };
 
 // The surface a stream group sits on in the mockups; the empty state borrows it
-// so the panel doesn't change shape once data sources land.
+// so the panel keeps its shape whether or not anything is linked.
 const STREAMS_BOX_STYLE = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
   padding: "8px 16px 12px",
   borderRadius: 12,
   background: "var(--MH-Theme-Neutrals-Light-Green, #F6F9F8)",
   ...HELP_STYLE,
 };
+
+const STREAM_HEADER_STYLE = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+  minHeight: 32,
+};
+
+const CHIPS_STYLE = { display: "flex", flexWrap: "wrap", gap: 4 };
 
 /** A collapsible heading with the body it controls. */
 function Section({ title, children, defaultOpen = true }) {
@@ -198,6 +220,9 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
     updateFile,
     closePanel,
     revealFile,
+    dataSources,
+    sourceApis,
+    showDataSources,
   } = useVisualBuilder();
 
   const declaration = declared?.[paramKey];
@@ -207,6 +232,7 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
   const [tab, setTab] = useState(initialTab || "settings");
   const [draft, setDraft] = useState({
     normalize: binding.normalize,
+    clamp: binding.clamp,
     allowMapping: binding.allowMapping,
     min: binding.rangeOverride?.min ?? "",
     max: binding.rangeOverride?.max ?? "",
@@ -217,6 +243,7 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
   useEffect(() => {
     setDraft({
       normalize: binding.normalize,
+      clamp: binding.clamp,
       allowMapping: binding.allowMapping,
       min: binding.rangeOverride?.min ?? "",
       max: binding.rangeOverride?.max ?? "",
@@ -238,6 +265,7 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
     const max = draft.max === "" ? null : Number(draft.max);
     updateBinding(paramKey, {
       normalize: draft.normalize,
+      clamp: draft.clamp,
       allowMapping: draft.allowMapping,
       rangeOverride: min === null && max === null ? null : { min, max },
     });
@@ -310,7 +338,7 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
                 <span style={LABEL_STYLE}>{t("dataType", "Data Type")}</span>
                 <Input
                   aria-label={t("dataType", "Data Type")}
-                  value={typeLabel(declaration.type)}
+                  value={typeLabel(declaration)}
                   disabled
                   onChange={() => {}}
                 />
@@ -345,54 +373,83 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
                 ) : null}
               </div>
 
-              <div style={TOGGLE_ROW_STYLE}>
-                <div style={{ flex: "1 1 auto", minWidth: 0 }}>
-                  <p style={{ ...LABEL_STYLE, margin: 0 }}>
-                    {t("normalize", "Normalize")}
-                  </p>
-                  <p style={{ ...HELP_STYLE, margin: 0 }}>
-                    {t(
-                      "normalizeHelp",
-                      "This will remap the values coming in from their default range to 0 to 1."
-                    )}
-                  </p>
-                </div>
-                <Checkbox
-                  tone="accent"
-                  checked={draft.normalize}
-                  disabled={!canEdit}
-                  ariaLabel={t("normalize", "Normalize")}
-                  onChange={(next) =>
-                    setDraft((current) => ({ ...current, normalize: next }))
-                  }
-                />
-              </div>
+              {/* Normalizing and ranging only mean something for numbers; a
+                  category or a colour has no scale to stretch. */}
+              {isNumeric(declaration) ? (
+                <>
+                  <div style={TOGGLE_ROW_STYLE}>
+                    <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                      <p style={{ ...LABEL_STYLE, margin: 0 }}>
+                        {t("normalize", "Normalize")}
+                      </p>
+                      <p style={{ ...HELP_STYLE, margin: 0 }}>
+                        {t(
+                          "normalizeHelp",
+                          "This will remap the values coming in from their default range to 0 to 1."
+                        )}
+                      </p>
+                    </div>
+                    <Checkbox
+                      tone="accent"
+                      checked={draft.normalize}
+                      disabled={!canEdit}
+                      ariaLabel={t("normalize", "Normalize")}
+                      onChange={(next) =>
+                        setDraft((current) => ({ ...current, normalize: next }))
+                      }
+                    />
+                  </div>
 
-              <div style={FIELD_STYLE}>
-                <span style={LABEL_STYLE}>{t("range", "Range")}</span>
-                <div style={{ display: "flex", gap: 12 }}>
-                  <Input
-                    type="number"
-                    placeholder={t("min", "Min")}
-                    aria-label={t("min", "Min")}
-                    value={draft.min}
-                    disabled={!canEdit}
-                    onChange={(next) =>
-                      setDraft((current) => ({ ...current, min: next }))
-                    }
-                  />
-                  <Input
-                    type="number"
-                    placeholder={t("max", "Max")}
-                    aria-label={t("max", "Max")}
-                    value={draft.max}
-                    disabled={!canEdit}
-                    onChange={(next) =>
-                      setDraft((current) => ({ ...current, max: next }))
-                    }
-                  />
-                </div>
-              </div>
+                  <div style={TOGGLE_ROW_STYLE}>
+                    <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                      <p style={{ ...LABEL_STYLE, margin: 0 }}>
+                        {t("clamp", "Clamp")}
+                      </p>
+                      <p style={{ ...HELP_STYLE, margin: 0 }}>
+                        {t(
+                          "clampHelp",
+                          "Keeps values coming in from a data source inside the range. Otherwise, values past it reach the visual as they are."
+                        )}
+                      </p>
+                    </div>
+                    <Checkbox
+                      tone="accent"
+                      checked={draft.clamp}
+                      disabled={!canEdit}
+                      ariaLabel={t("clamp", "Clamp")}
+                      onChange={(next) =>
+                        setDraft((current) => ({ ...current, clamp: next }))
+                      }
+                    />
+                  </div>
+
+                  <div style={FIELD_STYLE}>
+                    <span style={LABEL_STYLE}>{t("range", "Range")}</span>
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <Input
+                        type="number"
+                        placeholder={t("min", "Min")}
+                        aria-label={t("min", "Min")}
+                        value={draft.min}
+                        disabled={!canEdit}
+                        onChange={(next) =>
+                          setDraft((current) => ({ ...current, min: next }))
+                        }
+                      />
+                      <Input
+                        type="number"
+                        placeholder={t("max", "Max")}
+                        aria-label={t("max", "Max")}
+                        value={draft.max}
+                        disabled={!canEdit}
+                        onChange={(next) =>
+                          setDraft((current) => ({ ...current, max: next }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : null}
             </Section>
 
             <Section title={t("mapping", "Mapping")}>
@@ -448,14 +505,134 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
           <h3 style={SECTION_TITLE_STYLE}>
             {t("availableStreams", "Available Streams")}
           </h3>
-          <div style={STREAMS_BOX_STYLE}>
-            {t(
-              "noStreamsYet",
-              "No data sources are connected to this visual yet. Once data sources land you'll pick an output here; until then, set a value by hand from the parameter's controls."
-            )}
-          </div>
+          <StreamPicker
+            paramKey={paramKey}
+            declaration={declaration}
+            binding={binding}
+            canEdit={canEdit}
+            dataSources={dataSources || []}
+            sourceApis={sourceApis || {}}
+            updateBinding={updateBinding}
+            showDataSources={showDataSources}
+          />
         </div>
       )}
     </section>
   );
+}
+
+/**
+ * Every output a parameter could be mapped to, grouped by the source it comes
+ * from. Picking a channel maps it; picking the mapped one again unmaps it,
+ * back to the default rather than to a manual value the author never set.
+ *
+ * Only numeric outputs are listed, and only for a number parameter — see
+ * `isStreamMappable`. A source's outputs are listed whether or not it is
+ * streaming, so a mapping can be set up before the device is to hand.
+ */
+function StreamPicker({
+  paramKey,
+  declaration,
+  binding,
+  canEdit,
+  dataSources,
+  sourceApis,
+  updateBinding,
+  showDataSources,
+}) {
+  const { t } = useTranslation("visuals");
+  const mapping = binding.mapping?.kind === "stream" ? binding.mapping : null;
+
+  if (!isStreamMappable(declaration, binding)) {
+    return (
+      <div style={STREAMS_BOX_STYLE}>
+        {binding.allowMapping === false
+          ? t(
+              "mappingTurnedOff",
+              "Mapping is turned off for this parameter. Turn on Allow Mapping in its settings to connect it to a device."
+            )
+          : t(
+              "onlyNumbersMap",
+              "Only number parameters can be mapped to a device output for now. Set this one by hand from its controls."
+            )}
+      </div>
+    );
+  }
+
+  if (dataSources.length === 0) {
+    return (
+      <div style={STREAMS_BOX_STYLE}>
+        <span>
+          {t(
+            "noSourcesLinked",
+            "No data sources are linked to this visual yet. Link one to map its outputs here."
+          )}
+        </span>
+        {showDataSources ? (
+          <div>
+            <Button variant="text" tone="accent" onClick={showDataSources}>
+              {t("goToDataSources", "Go to Data Sources")}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return dataSources.map((source) => {
+    const excluded = new Set(source.settings?.excludedChannels || []);
+    const outputs = (source.block?.outputs || []).filter(
+      (output) => output.valueType !== "categorical"
+    );
+    const channels = outputs.flatMap((output) =>
+      (output.channels || [])
+        .filter((channel) => !excluded.has(channelKey(output, channel.index)))
+        .map((channel) => ({ output, channel }))
+    );
+
+    return (
+      <div key={source.id} style={STREAMS_BOX_STYLE}>
+        <div style={STREAM_HEADER_STYLE}>
+          <span style={{ ...SECTION_TITLE_STYLE, minWidth: 0 }}>
+            {source.label || source.block?.title}
+          </span>
+          <StatusIndicator streaming={!!sourceApis[source.id]?.streaming} />
+        </div>
+        {channels.length === 0 ? (
+          <span>{t("noNumericOutputs", "This source has no numeric outputs to map.")}</span>
+        ) : (
+          <div style={CHIPS_STYLE}>
+            {channels.map(({ output, channel }) => {
+              const selected =
+                mapping?.sourceId === source.id &&
+                mapping?.output === outputKey(output) &&
+                mapping?.channel === channel.index;
+              return (
+                <Chip
+                  key={channelKey(output, channel.index)}
+                  label={channel.label}
+                  selected={selected}
+                  pressed={selected}
+                  accent="tertiary"
+                  disabled={!canEdit}
+                  onClick={() =>
+                    updateBinding(paramKey, {
+                      mapping: selected
+                        ? null
+                        : {
+                            kind: "stream",
+                            sourceId: source.id,
+                            output: outputKey(output),
+                            channel: channel.index,
+                          },
+                    })
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  });
 }

@@ -49,7 +49,7 @@ const CONSOLE_STYLE = {
  */
 export default function Preview({
   files,
-  values,
+  bus,
   logs = [],
   paused = false,
   onDeclare,
@@ -94,7 +94,7 @@ export default function Preview({
       <div style={STAGE_STYLE}>
         <P5Frame
           files={files}
-          values={values}
+          bus={bus}
           paused={paused}
           onDeclare={onDeclare}
           onLog={onLog}

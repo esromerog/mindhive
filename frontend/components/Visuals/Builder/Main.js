@@ -23,13 +23,24 @@ import {
   UPDATE_VISUAL,
   UPDATE_VISUAL_CODE_FILE,
 } from "../../Mutations/YQVisual";
+import {
+  CREATE_VISUAL_DATA_SOURCE,
+  DELETE_VISUAL_DATA_SOURCE,
+} from "../../Mutations/DataSourceBlock";
 
 import { VisualBuilderContext } from "../Context/VisualBuilderContext";
-import { readBindings, resolveValues, writeBindings } from "../Helpers/bindings";
+import {
+  normalizeDeclarations,
+  readBindings,
+  resolveValues,
+  writeBindings,
+} from "../Helpers/bindings";
 import {
   ENTRY_TEMPLATE,
   PARAMETERS_TEMPLATE,
 } from "../Runtime/buildSketchDocument";
+import ParameterBus from "../Runtime/parameterBus";
+import useVisualDataSources from "../Runtime/useVisualDataSources";
 
 import TopBar from "./TopBar";
 import Preview from "./Preview";
@@ -38,6 +49,7 @@ import DocumentationPanel from "./Panels/Documentation";
 import DataSourcesPanel from "./Panels/DataSources";
 import ParametersPanel from "./Panels/Parameters";
 import ParameterDetailPanel from "./Panels/ParameterDetail";
+import DataSourceSettingsPanel from "./Panels/DataSourceSettings";
 import CodePanel from "./Panels/Code";
 import SettingsPanel from "./Panels/Settings";
 
@@ -180,6 +192,8 @@ export default function VisualBuilder({ query, user }) {
   const [createCodeFile] = useMutation(CREATE_VISUAL_CODE_FILE);
   const [updateCodeFile] = useMutation(UPDATE_VISUAL_CODE_FILE);
   const [deleteCodeFile] = useMutation(DELETE_VISUAL_CODE_FILE);
+  const [createDataSource] = useMutation(CREATE_VISUAL_DATA_SOURCE);
+  const [deleteDataSource] = useMutation(DELETE_VISUAL_DATA_SOURCE);
 
   const visual = data?.visual;
   const canEdit =
@@ -187,7 +201,7 @@ export default function VisualBuilder({ query, user }) {
     (visual?.author?.id === user.id ||
       !!visual?.collaborators?.some((c) => c.id === user.id));
 
-  const [tab, setTab] = useState("code");
+  const [tab, setTab] = useState("parameters");
   const [detailPanel, setDetailPanel] = useState(null);
   const [focusFileId, setFocusFileId] = useState(null);
   const [previewVisible, setPreviewVisible] = useState(true);
@@ -200,6 +214,16 @@ export default function VisualBuilder({ query, user }) {
   const [declared, setDeclared] = useState({});
   const [hasDeclaration, setHasDeclaration] = useState(false);
   const [bindings, setBindings] = useState({});
+  const [bus] = useState(() => new ParameterBus());
+
+  // The linked devices run here, in the shell, so they stay connected while
+  // the author moves between tabs.
+  const {
+    sources: dataSources,
+    apis: sourceApis,
+    runtimes: sourceRuntimes,
+    refetch: refetchSources,
+  } = useVisualDataSources(visualId, bus, declared, bindings);
 
   // Console output from the running sketch. It lives here rather than in the
   // Preview because the author reads it while looking at the code, and the
@@ -211,10 +235,13 @@ export default function VisualBuilder({ query, user }) {
 
   // ── Load ───────────────────────────────────────────────────────────────────
 
+  // Seeded once per visual, never re-read from the cache after that. Every save
+  // writes `parameters` back into the cached visual, and re-seeding from it
+  // would snap a value being dragged back to whatever the last save carried.
   useEffect(() => {
     if (!visual) return;
     setBindings(readBindings(visual.parameters).bindings);
-  }, [visual?.id, visual?.parameters]);
+  }, [visual?.id]);
 
   useEffect(() => {
     if (!visual) return;
@@ -362,25 +389,43 @@ export default function VisualBuilder({ query, user }) {
   useEffect(
     () => () => {
       Object.values(saveTimers.current).forEach(clearTimeout);
+      // A value set just before leaving would otherwise never be saved.
+      saveBindingsRef.current();
     },
     []
   );
 
-  const updateBinding = useCallback(
-    (key, patch) => {
-      // Computed outside the state updater on purpose: React may invoke an
-      // updater twice, and a mutation fired from inside one would go with it.
-      const next = {
-        ...bindings,
-        [key]: { ...(bindings[key] || {}), ...patch },
-      };
-      setBindings(next);
-      updateVisual({
-        variables: { id: visualId, data: { parameters: writeBindings(next) } },
-      }).catch(() => {});
-    },
-    [bindings, updateVisual, visualId]
-  );
+  // The save reads the latest bindings when it fires, not the ones it was
+  // scheduled with — a drag schedules it dozens of times.
+  const bindingsRef = useRef(bindings);
+  bindingsRef.current = bindings;
+  const bindingsDirty = useRef(false);
+  const saveBindingsRef = useRef(null);
+  saveBindingsRef.current = () => {
+    if (!bindingsDirty.current) return;
+    bindingsDirty.current = false;
+    updateVisual({
+      variables: {
+        id: visualId,
+        data: { parameters: writeBindings(bindingsRef.current) },
+      },
+    }).catch(() => {});
+  };
+
+  // Local state moves on every call so the sketch follows the control; the
+  // write to the database waits until the control has been let go of.
+  const updateBinding = useCallback((key, patch) => {
+    setBindings((current) => ({
+      ...current,
+      [key]: { ...(current[key] || {}), ...patch },
+    }));
+    bindingsDirty.current = true;
+    clearTimeout(saveTimers.current.bindings);
+    saveTimers.current.bindings = setTimeout(
+      () => saveBindingsRef.current(),
+      SAVE_DEBOUNCE_MS
+    );
+  }, []);
 
   // Whether the people a visual is shared with see its documentation at all.
   // Lives on the visual rather than in the Yjs room: it is a sharing decision,
@@ -394,14 +439,19 @@ export default function VisualBuilder({ query, user }) {
     [updateVisual, visualId]
   );
 
-  const onDeclare = useCallback((parameters) => {
-    setDeclared(parameters);
-    setHasDeclaration(true);
-  }, []);
-
   const pushLog = useCallback((entry) => {
     setLogs((current) => [...current.slice(-49), entry]);
   }, []);
+
+  const onDeclare = useCallback(
+    (raw) => {
+      const { parameters, warnings } = normalizeDeclarations(raw);
+      setDeclared(parameters);
+      setHasDeclaration(true);
+      warnings.forEach((message) => pushLog({ kind: "warn", message }));
+    },
+    [pushLog]
+  );
 
   const clearLogs = useCallback(() => setLogs([]), []);
 
@@ -409,13 +459,57 @@ export default function VisualBuilder({ query, user }) {
   // leave a fixed mistake on screen.
   useEffect(() => setLogs([]), [runFiles]);
 
-  const values = useMemo(
-    () => resolveValues(declared, bindings),
-    [declared, bindings]
-  );
+  useEffect(() => {
+    bus.replace(resolveValues(declared, bindings, bus.values));
+  }, [bus, declared, bindings]);
 
   const openPanel = useCallback((panel) => setDetailPanel(panel), []);
   const closePanel = useCallback(() => setDetailPanel(null), []);
+
+  // ── Data sources ───────────────────────────────────────────────────────────
+
+  const linkSource = useCallback(
+    async (blockId) => {
+      if (!blockId) return;
+      await createDataSource({
+        variables: {
+          data: {
+            visual: { connect: { id: visualId } },
+            block: { connect: { id: blockId } },
+            order: dataSources.length,
+          },
+        },
+      }).catch(() => {});
+      refetchSources();
+    },
+    [createDataSource, visualId, dataSources.length, refetchSources]
+  );
+
+  // Parameters mapped onto the source go back to their defaults with it,
+  // rather than keeping a mapping that points at nothing.
+  const unlinkSource = useCallback(
+    async (source) => {
+      for (const [key, binding] of Object.entries(bindingsRef.current)) {
+        if (binding?.mapping?.sourceId === source.id) {
+          updateBinding(key, { mapping: null });
+        }
+      }
+      await deleteDataSource({ variables: { id: source.id } }).catch(() => {});
+      refetchSources();
+    },
+    [deleteDataSource, updateBinding, refetchSources]
+  );
+
+  const openSourceSettings = useCallback(
+    (sourceId) => setDetailPanel({ sourceId }),
+    []
+  );
+
+  // From a parameter's empty mapping list to where sources are linked.
+  const showDataSources = useCallback(() => {
+    setDetailPanel(null);
+    setTab("dataSource");
+  }, []);
 
   // ── Preview drawer ─────────────────────────────────────────────────────────
 
@@ -488,12 +582,19 @@ export default function VisualBuilder({ query, user }) {
       bindings,
       updateBinding,
       setDocsVisible,
-      values,
+      bus,
+      dataSources,
+      sourceApis,
+      linkSource,
+      unlinkSource,
+      openSourceSettings,
+      showDataSources,
       openPanel,
       closePanel,
       // Which parameter the detail panel is pointed at, so the row it came from
       // can show itself as the selected one.
       detailKey: detailPanel?.paramKey ?? null,
+      detailSourceId: detailPanel?.sourceId ?? null,
       revealFile,
       focusFileId,
       logs,
@@ -512,7 +613,13 @@ export default function VisualBuilder({ query, user }) {
       bindings,
       updateBinding,
       setDocsVisible,
-      values,
+      bus,
+      dataSources,
+      sourceApis,
+      linkSource,
+      unlinkSource,
+      openSourceSettings,
+      showDataSources,
       openPanel,
       closePanel,
       detailPanel,
@@ -547,6 +654,7 @@ export default function VisualBuilder({ query, user }) {
 
   return (
     <VisualBuilderContext.Provider value={contextValue}>
+      {sourceRuntimes}
       <div className="Visuals-Builder" style={SHELL_STYLE}>
         <TopBar title={visual.title} onShare={() => setShareOpen(true)} />
 
@@ -585,10 +693,14 @@ export default function VisualBuilder({ query, user }) {
                       exit={{ flexGrow: 0, marginLeft: 0 }}
                       transition={COLLAPSE_TRANSITION}
                     >
-                      <ParameterDetailPanel
-                        paramKey={detailPanel.paramKey}
-                        initialTab={detailPanel.initialTab}
-                      />
+                      {detailPanel.sourceId ? (
+                        <DataSourceSettingsPanel sourceId={detailPanel.sourceId} />
+                      ) : (
+                        <ParameterDetailPanel
+                          paramKey={detailPanel.paramKey}
+                          initialTab={detailPanel.initialTab}
+                        />
+                      )}
                     </motion.div>
                   ) : null}
                 </AnimatePresence>
@@ -597,7 +709,7 @@ export default function VisualBuilder({ query, user }) {
             end={
               <Preview
                 files={runFiles}
-                values={values}
+                bus={bus}
                 logs={logs}
                 paused={previewPaused}
                 onDeclare={onDeclare}

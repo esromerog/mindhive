@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import useTranslation from "next-translate/useTranslation";
 
 import Panel from "../Panel";
 import Button from "../../../DesignSystem/Button";
+import ButtonGroup from "../../../DesignSystem/ButtonGroup";
 import Checkbox from "../../../DesignSystem/Checkbox";
 import Chip from "../../../DesignSystem/Chip";
+import DropdownSelect from "../../../DesignSystem/DropdownSelect";
 import IconButton from "../../../DesignSystem/IconButton";
 import Input from "../../../DesignSystem/Input";
 import Slider from "../../../DesignSystem/Slider";
@@ -20,8 +22,14 @@ import {
 } from "../../../DesignSystem/Icons";
 
 import { useVisualBuilder } from "../../Context/VisualBuilderContext";
-import { bindingFor, labelFor, typeLabel } from "../../Helpers/bindings";
+import {
+  bindingFor,
+  isToggle,
+  labelFor,
+  typeLabel,
+} from "../../Helpers/bindings";
 import { addParameter } from "../../Runtime/parametersFile";
+import { outputKey } from "../../../../lib/yqOutputs";
 
 // MH-Theme/Additional Accent — the banner is the Parameters tab talking about
 // itself, so it is painted in the tab's own hue rather than the platform's.
@@ -139,20 +147,17 @@ const EMPTY_STYLE = {
   color: "var(--MH-Theme-Neutrals-Dark, #6A6A6A)",
 };
 
-// The three looks a parameter's map chip takes. All three are 8px-radius chips
-// of the same size; what changes is whether the row has a value coming in.
-const CHIP_MANUAL_STYLE = {
+// A mapped chip's two looks: resting, and live while its source streams. An
+// unmapped (or hand-set) parameter is the plain dashed chip, no override.
+const CHIP_MAPPED_STYLE = {
   background: "var(--MH-Theme-Neutrals-Lighter, #F3F3F3)",
   backgroundColor: "var(--MH-Theme-Neutrals-Lighter, #F3F3F3)",
 };
-const CHIP_MAPPED_STYLE = {
-  ...CHIP_MANUAL_STYLE,
-  paddingLeft: 8,
-};
-// Dashed, because there is nothing there yet — the chip is an invitation rather
-// than a value.
-const CHIP_UNMAPPED_STYLE = {
-  border: "1px dashed var(--MH-Theme-Neutrals-Medium, #A1A1A1)",
+// Mapped and the source is streaming: the value on the row is live.
+const CHIP_LIVE_STYLE = {
+  ...CHIP_MAPPED_STYLE,
+  background: "var(--MH-Theme-Neutrals-Light-Green, #F6F9F8)",
+  backgroundColor: "var(--MH-Theme-Neutrals-Light-Green, #F6F9F8)",
 };
 
 /**
@@ -176,12 +181,14 @@ export default function ParametersPanel() {
     hasDeclaration,
     bindings,
     updateBinding,
-    values,
+    bus,
     files,
     updateFile,
     openPanel,
     revealFile,
     detailKey,
+    dataSources,
+    sourceApis,
   } = useVisualBuilder();
 
   const [expanded, setExpanded] = useState(null);
@@ -276,13 +283,15 @@ export default function ParametersPanel() {
               <div style={ROW_STYLE}>
                 <div style={NAME_BLOCK_STYLE}>
                   <p style={NAME_STYLE}>{labelFor(key, declaration)}</p>
-                  <p style={TYPE_STYLE}>{typeLabel(declaration?.type)}</p>
+                  <p style={TYPE_STYLE}>{typeLabel(declaration)}</p>
                 </div>
 
                 <div style={ACTIONS_STYLE}>
                   <span style={{ padding: "0 4px" }}>
                     <MapChip
                       binding={binding}
+                      dataSources={dataSources || []}
+                      sourceApis={sourceApis || {}}
                       onClick={() =>
                         openPanel({ paramKey: key, initialTab: "mapping" })
                       }
@@ -320,7 +329,7 @@ export default function ParametersPanel() {
                       paramKey={key}
                       declaration={declaration}
                       binding={binding}
-                      value={values[key]}
+                      bus={bus}
                       canEdit={canEdit}
                       updateBinding={updateBinding}
                     />
@@ -339,43 +348,46 @@ export default function ParametersPanel() {
  * The chip that says where a parameter's value comes from, and opens the
  * mapping panel when clicked.
  *
- * A stream binding gets the waveform glyph, but only reads as live when the
- * stream is actually running — which, until data sources land, it never is.
+ * A value set by hand reads the same as no mapping at all: either way nothing
+ * is feeding the parameter, and the dashed chip invites mapping one. The value
+ * itself is on show in the row's controls.
+ *
+ * A stream binding is named by the channel it reads, and tints Light Green
+ * only while its source is actually streaming — a mapping to a device nobody
+ * has connected is not live, and shouldn't look it.
  */
-function MapChip({ binding, onClick }) {
+function MapChip({ binding, dataSources, sourceApis, onClick }) {
   const { t } = useTranslation("visuals");
   const mapping = binding.mapping;
 
-  if (!mapping) {
+  if (mapping?.kind !== "stream") {
     return (
       <Chip
+        dashed
         label={t("mapADataSource", "Map a data source")}
-        style={CHIP_UNMAPPED_STYLE}
         onClick={onClick}
       />
     );
   }
 
-  if (mapping.kind === "manual") {
-    return (
-      <Chip
-        label={t("manualValue", "Manual value")}
-        style={CHIP_MANUAL_STYLE}
-        onClick={onClick}
-      />
-    );
-  }
+  const source = dataSources.find((row) => row.id === mapping.sourceId);
+  const channel = (source?.block?.outputs || [])
+    .find((output) => outputKey(output) === mapping.output)
+    ?.channels?.find((entry) => entry.index === mapping.channel);
+  const live = !!source && !!sourceApis[source.id]?.streaming;
 
-  // The mockups also draw a live variant, tinted Light Green. Nothing can be
-  // live yet — `resolveValues` deliberately falls back to the declared default
-  // for a stream binding rather than pretending — so a mapped chip stays in the
-  // resting look until there is a running stream to read it from.
   return (
     <Chip
-      label={mapping.streamID}
+      label={channel?.label || t("missingOutput", "Missing output")}
       leading={<WaveformIcon width={18} height={18} />}
-      style={CHIP_MAPPED_STYLE}
-      title={t("notStreaming", "Not streaming")}
+      style={live ? CHIP_LIVE_STYLE : CHIP_MAPPED_STYLE}
+      title={
+        source
+          ? `${source.label || source.block?.title} · ${
+              live ? t("streaming", "Streaming") : t("notStreaming", "Not streaming")
+            }`
+          : t("sourceUnlinked", "Its data source is no longer linked")
+      }
       onClick={onClick}
     />
   );
@@ -384,21 +396,30 @@ function MapChip({ binding, onClick }) {
 /**
  * A parameter's own controls, opened from the tune button.
  *
- * The control is chosen by data type, because that is the only thing that makes
- * a value editable by hand: a number with a declared range is a slider, the
- * same number without one is a field, and a colour is a swatch. A parameter fed
- * by a stream keeps its control visible but inert, so the row still shows what
- * the sketch is receiving.
+ * The control is chosen by the declared kind, because that is the only thing
+ * that makes a value editable by hand. A parameter fed by a stream keeps its
+ * control visible but inert, so the row still shows what the sketch is
+ * receiving.
+ *
+ * The value shown is read from the bus, not from React state: it is what the
+ * sketch actually has, and once streams land it moves without re-rendering
+ * anything but this row.
  */
 function ManualControls({
   paramKey,
   declaration,
   binding,
-  value,
+  bus,
   canEdit,
   updateBinding,
 }) {
   const { t } = useTranslation("visuals");
+
+  const value = useSyncExternalStore(
+    (listener) => bus.subscribe(paramKey, listener),
+    () => bus.get(paramKey),
+    () => bus.get(paramKey)
+  );
 
   const streamed = !!binding.mapping && binding.mapping.kind !== "manual";
   const disabled = !canEdit || streamed;
@@ -435,6 +456,22 @@ function ManualControls({
   );
 }
 
+// A handful of options fit side by side as a segmented control; past that the
+// segments get too narrow to read and a dropdown takes over.
+const MAX_SEGMENTS = 4;
+
+/**
+ * One control per declared kind:
+ *
+ * - **number** — a slider when a range resolves, a number field otherwise.
+ * - **category** — a toggle for on/off, segments for a few options, a dropdown
+ *   for more.
+ * - **text** — a text field.
+ * - **color** — a swatch.
+ * - **vector2 / vector3** — a number field per axis, or a slider per axis when
+ *   a range resolves. Unity's inspector is the model: a vector is a row of
+ *   numbers that share one range.
+ */
 function ValueControl({ declaration, binding, value, disabled, onChange }) {
   const { t } = useTranslation("visuals");
   const label = t("value", "Value");
@@ -445,8 +482,11 @@ function ValueControl({ declaration, binding, value, disabled, onChange }) {
   const min = binding.rangeOverride?.min ?? declaration?.min;
   const max = binding.rangeOverride?.max ?? declaration?.max;
   const ranged = Number.isFinite(Number(min)) && Number.isFinite(Number(max));
+  const step = Number.isFinite(Number(declaration?.step))
+    ? Number(declaration.step)
+    : undefined;
 
-  if (type === "boolean") {
+  if (isToggle(declaration)) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ ...FIELD_LABEL_STYLE, flex: "1 1 auto" }}>{label}</span>
@@ -457,6 +497,47 @@ function ValueControl({ declaration, binding, value, disabled, onChange }) {
           ariaLabel={label}
           onChange={onChange}
         />
+      </div>
+    );
+  }
+
+  if (type === "category") {
+    // Options can be numbers or strings, and both controls take string values,
+    // so an option is addressed by its position.
+    const options = declaration.options;
+    const selected = String(
+      options.findIndex((option) => Object.is(option, value))
+    );
+    const pick = (index) => onChange(options[Number(index)]);
+
+    return (
+      <div style={FIELD_STYLE}>
+        <span style={FIELD_LABEL_STYLE}>{label}</span>
+        {options.length <= MAX_SEGMENTS ? (
+          <ButtonGroup
+            fullWidth
+            aria-label={label}
+            disabled={disabled}
+            value={selected}
+            items={options.map((option, index) => ({
+              value: String(index),
+              label: String(option),
+            }))}
+            onChange={pick}
+          />
+        ) : (
+          <DropdownSelect
+            portal
+            ariaLabel={label}
+            disabled={disabled}
+            value={selected}
+            options={options.map((option, index) => ({
+              value: String(index),
+              label: String(option),
+            }))}
+            onChange={pick}
+          />
+        )}
       </div>
     );
   }
@@ -485,7 +566,7 @@ function ValueControl({ declaration, binding, value, disabled, onChange }) {
     );
   }
 
-  if (type === "string") {
+  if (type === "text") {
     return (
       <div style={FIELD_STYLE}>
         <span style={FIELD_LABEL_STYLE}>{label}</span>
@@ -503,6 +584,40 @@ function ValueControl({ declaration, binding, value, disabled, onChange }) {
     const size = type === "vector2" ? 2 : 3;
     const axes = ["x", "y", "z"].slice(0, size);
     const current = Array.isArray(value) ? value : new Array(size).fill(0);
+    const setAxis = (index, next) => {
+      const updated = [...current];
+      updated[index] = next;
+      onChange(updated);
+    };
+
+    if (ranged) {
+      return (
+        <div style={FIELD_STYLE}>
+          <span style={FIELD_LABEL_STYLE}>{label}</span>
+          {axes.map((axis, index) => (
+            <div
+              key={axis}
+              style={{ display: "flex", alignItems: "center", gap: 12 }}
+            >
+              <span style={{ ...FIELD_LABEL_STYLE, width: 16 }}>
+                {axis.toUpperCase()}
+              </span>
+              <Slider
+                tone="accent"
+                min={Number(min)}
+                max={Number(max)}
+                step={step}
+                value={Number(current[index])}
+                disabled={disabled}
+                ariaLabel={`${label} ${axis.toUpperCase()}`}
+                onChange={(next) => setAxis(index, next)}
+              />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     return (
       <div style={FIELD_STYLE}>
         <span style={FIELD_LABEL_STYLE}>{label}</span>
@@ -511,15 +626,12 @@ function ValueControl({ declaration, binding, value, disabled, onChange }) {
             <Input
               key={axis}
               type="number"
+              step={step ?? "any"}
               placeholder={axis.toUpperCase()}
               aria-label={`${label} ${axis.toUpperCase()}`}
               value={current[index] == null ? "" : String(current[index])}
               disabled={disabled}
-              onChange={(next) => {
-                const updated = [...current];
-                updated[index] = next === "" ? 0 : Number(next);
-                onChange(updated);
-              }}
+              onChange={(next) => setAxis(index, next === "" ? 0 : Number(next))}
             />
           ))}
         </div>
@@ -535,7 +647,7 @@ function ValueControl({ declaration, binding, value, disabled, onChange }) {
           tone="accent"
           min={Number(min)}
           max={Number(max)}
-          step={type === "integer" ? 1 : undefined}
+          step={step}
           value={Number.isFinite(Number(value)) ? Number(value) : Number(min)}
           disabled={disabled}
           ariaLabel={label}
@@ -550,7 +662,7 @@ function ValueControl({ declaration, binding, value, disabled, onChange }) {
       <span style={FIELD_LABEL_STYLE}>{label}</span>
       <Input
         type="number"
-        step={type === "integer" ? 1 : "any"}
+        step={step ?? "any"}
         aria-label={label}
         value={value == null ? "" : String(value)}
         disabled={disabled}

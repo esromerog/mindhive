@@ -36,8 +36,9 @@ const WITH_TRAILING_ICON = {
 // The colour families a button can be painted in. `primary` is the platform
 // default; `accent` is the hue the mockups give the Parameters area, so a
 // parameter's own actions read as one group set apart from the chrome round it.
-// Only filled, outline and text carry a brand colour and vary by tone — tonal
-// and subtle are neutral surfaces and ignore it.
+// Only filled, outline and text carry a brand colour and vary by tone — subtle
+// is a neutral surface and ignores it, and tonal keeps its calypso container
+// for every tone but tertiary, which brings its own (see `tonal` below).
 const TONES = {
   primary: {
     fill: "var(--MH-Theme-Primary-Dark, #336F8A)",
@@ -65,6 +66,15 @@ const TONES = {
     edge: "var(--MH-Theme-Tertiary-Base, #55808C)",
     edgePressed: "var(--MH-Theme-Tertiary-Light, #F6F9F8)",
     label: "var(--MH-Theme-Tertiary-Base, #55808C)",
+    // The data source block's secondary action ("Settings", "Edit Block"):
+    // Tertiary Medium behind a black label, so it reads on a Light-Green card
+    // where the calypso tonal would clash.
+    tonal: {
+      base: "var(--MH-Theme-Tertiary-Medium, #D3E0E3)",
+      label: "var(--MH-Theme-Neutrals-Black, #171717)",
+      hover: "#C2D3D7",
+      pressed: "var(--MH-Theme-Tertiary-Base, #55808C)",
+    },
   },
   // Muted grey, for a secondary action that sits beside a primary one and
   // should read as quieter — e.g. "Disconnect" next to a connected device.
@@ -177,6 +187,14 @@ function getVariantStyles(variant, tone) {
         disabled: OUTLINE_DISABLED,
       };
     case "tonal":
+      if (palette.tonal) {
+        return {
+          base: { ...BASE_STYLE, background: palette.tonal.base, color: palette.tonal.label },
+          hover: { background: palette.tonal.hover },
+          pressed: { background: palette.tonal.pressed },
+          disabled: TONAL_DISABLED,
+        };
+      }
       return { base: TONAL_BASE, hover: TONAL_HOVER, pressed: TONAL_PRESSED, disabled: TONAL_DISABLED };
     case "subtle":
       return { base: SUBTLE_BASE, hover: SUBTLE_HOVER, pressed: SUBTLE_PRESSED, disabled: SUBTLE_DISABLED };
@@ -234,8 +252,9 @@ const ICON_WRAPPER_STYLE = {
  * @param {"primary"|"accent"|"tertiary"|"neutral"} [tone="primary"] - Colour family. `accent` paints
  *   the filled, outline and text variants in Additional Accent, `tertiary` in
  *   Tertiary (the data sources area's link/unlink actions), `neutral` in grey
- *   (a quieter secondary action, e.g. "Disconnect"); tonal and subtle are
- *   neutral surfaces already and ignore this prop.
+ *   (a quieter secondary action, e.g. "Disconnect"). Subtle ignores this
+ *   prop; tonal ignores it except for `tertiary`, which swaps the calypso
+ *   container for Tertiary Medium behind a black label.
  * @param {React.ReactNode} children - Button label (required).
  * @param {React.ReactNode} [leadingIcon] - Optional 24px icon left of label.
  * @param {React.ReactNode} [trailingIcon] - Optional 24px icon right of label (e.g. a dropdown caret).

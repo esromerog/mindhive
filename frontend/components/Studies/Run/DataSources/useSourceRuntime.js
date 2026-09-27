@@ -30,6 +30,7 @@ export default function useSourceRuntime(row) {
   const hiddenContainerRef = useRef(null); // detached host for those <video> elements
   const pipelineRef = useRef(null);
   const buffersRef = useRef(new Map()); // channelKey(output, index) -> Float32Array
+  const packetListenersRef = useRef(new Set()); // (output, packet, channelCount) => void
 
   // One Pipeline per linked source, built once for this hook's lifetime;
   // receivers attach to it as their inputs connect.
@@ -54,6 +55,9 @@ export default function useSourceRuntime(row) {
             const channelCount =
               packet.metadata?.channelCount || declared.channels?.length || 1;
             const samples = Math.floor(packet.data.length / channelCount);
+            packetListenersRef.current.forEach((listener) =>
+              listener(declared, packet, channelCount)
+            );
             (declared.channels || []).forEach((channel) => {
               const key = channelKey(declared, channel.index);
               let buf = buffersRef.current.get(key);
@@ -176,6 +180,14 @@ export default function useSourceRuntime(row) {
   // already connected, instead of opening the device a second time.
   const getReceiver = useCallback((inputId) => receiversRef.current[inputId] || null, []);
 
+  // Hands every declared-output packet to `listener` as it arrives, for
+  // consumers that need values rather than the preview's ring buffers — a
+  // visual's parameters mapped onto an output. Returns the unsubscribe.
+  const addPacketListener = useCallback((listener) => {
+    packetListenersRef.current.add(listener);
+    return () => packetListenersRef.current.delete(listener);
+  }, []);
+
   const streaming = inputs.some((i) => inputStatus[i.id]?.status === "connected");
   const requiredConnected = inputs
     .filter((i) => i.required)
@@ -190,6 +202,7 @@ export default function useSourceRuntime(row) {
     getBuffer,
     getVideoElement,
     getReceiver,
+    addPacketListener,
     streaming,
     requiredConnected,
   };
