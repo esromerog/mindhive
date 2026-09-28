@@ -124,7 +124,9 @@ export function InputRow({ input, status, onConnect, onDisconnect, videoElement,
                 ? status.deviceLabel || "Connected"
                 : status?.status === "error"
                   ? status.error || "Could not connect"
-                  : `No ${input.label.toLowerCase()} connected`}
+                  : status?.status === "lost"
+                    ? `Lost connection to ${status.deviceLabel || input.label}`
+                    : `No ${input.label.toLowerCase()} connected`}
             </span>
           )}
         </div>

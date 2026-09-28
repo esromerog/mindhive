@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef } from "react";
 
 import buildSketchDocument, { PROTOCOL } from "./buildSketchDocument";
 
+const EMPTY_SOURCES = [];
+
 const FRAME_STYLE = {
   display: "block",
   width: "100%",
@@ -32,6 +34,8 @@ const FRAME_STYLE = {
  *
  * @param {Array<{id, name, role, language, content}>} files - Source files.
  * @param {import("./parameterBus").default} bus - Current parameter values.
+ * @param {Array} [sources=[]] - Linked data sources' connection state, which the
+ *   sketch reads as `sources`. See `useVisualDataSources`.
  * @param {boolean} [paused=false] - Stops the draw loop without unmounting.
  * @param {(parameters: object) => void} [onDeclare] - Fires with the sketch's declaration.
  * @param {(entry: {kind, message, stack, line}) => void} [onLog] - Console output and errors.
@@ -40,6 +44,7 @@ const FRAME_STYLE = {
 export default function P5Frame({
   files,
   bus,
+  sources = EMPTY_SOURCES,
   paused = false,
   onDeclare,
   onLog,
@@ -69,6 +74,7 @@ export default function P5Frame({
   const handlers = useRef({ onDeclare, onLog, onEvent });
   handlers.current = { onDeclare, onLog, onEvent };
   const pausedRef = useRef(paused);
+  const sourcesRef = useRef(sources);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,6 +129,7 @@ export default function P5Frame({
       if (pausedRef.current) {
         transport.send({ protocol: PROTOCOL, type: "pause", paused: true });
       }
+      transport.send({ protocol: PROTOCOL, type: "sources", sources: sourcesRef.current });
       detach = bus.connect((values, full) =>
         transport.send({
           protocol: PROTOCOL,
@@ -156,6 +163,11 @@ export default function P5Frame({
       port?.close();
     };
   }, [nonce, entryLine, bus]);
+
+  useEffect(() => {
+    sourcesRef.current = sources;
+    transportRef.current?.send({ protocol: PROTOCOL, type: "sources", sources });
+  }, [sources]);
 
   useEffect(() => {
     pausedRef.current = paused;

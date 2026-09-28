@@ -27,6 +27,7 @@ import DocumentationPanel from "../Builder/Panels/Documentation";
 import DataSourcesPanel from "../Builder/Panels/DataSources";
 import ParametersPanel from "../Builder/Panels/Parameters";
 import ConnectScreen from "../../Studies/Run/DataSources/ConnectScreen";
+import DisconnectedToasts from "./DisconnectedToasts";
 
 const SHELL_STYLE = {
   display: "flex",
@@ -104,6 +105,7 @@ export default function VisualViewer({
   const {
     sources: dataSources,
     apis: sourceApis,
+    status: sourceStatus,
     runtimes: sourceRuntimes,
     loading: sourcesLoading,
   } = useVisualDataSources(id, bus, declared, bindings);
@@ -206,7 +208,13 @@ export default function VisualViewer({
           />
         ) : (
           <div style={FULLSCREEN_STYLE}>
-            <P5Frame files={files} bus={bus} onDeclare={onDeclare} />
+            <P5Frame
+              files={files}
+              bus={bus}
+              sources={sourceStatus}
+              onDeclare={onDeclare}
+            />
+            <DisconnectedToasts rows={dataSources} apis={sourceApis} />
           </div>
         )}
       </>
@@ -266,7 +274,12 @@ export default function VisualViewer({
               )
             }
             end={
-              <Preview files={files} bus={bus} onDeclare={onDeclare} />
+              <Preview
+                files={files}
+                bus={bus}
+                sources={sourceStatus}
+                onDeclare={onDeclare}
+              />
             }
           />
         </div>

@@ -26,7 +26,11 @@ import { bindingFor, isStreamMappable, streamValue } from "../Helpers/bindings";
  * @param {import("./parameterBus").default} bus
  * @param {Record<string, object>} declared - The normalized declaration.
  * @param {Record<string, object>} bindings
- * @returns {{ sources: Array, apis: Record<string, object>, runtimes: React.ReactNode, loading: boolean, refetch: Function }}
+ * Alongside the values, the sketch gets `status`: a plain snapshot of every
+ * source's connection state, exposed to it as `sources`. It only changes when a
+ * device connects or drops, so unlike the stream it can live in React state.
+ *
+ * @returns {{ sources: Array, apis: Record<string, object>, status: Array, runtimes: React.ReactNode, loading: boolean, refetch: Function }}
  */
 export default function useVisualDataSources(visualId, bus, declared, bindings) {
   const { data, loading, refetch } = useQuery(VISUAL_DATA_SOURCES, {
@@ -50,6 +54,28 @@ export default function useVisualDataSources(visualId, bus, declared, bindings) 
           .map((source) => [source.id, reported[source.id]])
       ),
     [sources, reported]
+  );
+
+  const status = useMemo(
+    () =>
+      sources.map((row) => {
+        const api = apis[row.id];
+        return {
+          id: row.id,
+          label: row.label || row.block.title,
+          streaming: !!api?.streaming,
+          // Every required input connected — what the connect screen gates on.
+          ready: !!api?.requiredConnected,
+          inputs: (row.block.inputs || []).map((input) => ({
+            id: input.id,
+            label: input.label,
+            required: !!input.required,
+            status: api?.inputStatus[input.id]?.status || "disconnected",
+            device: api?.inputStatus[input.id]?.deviceLabel || null,
+          })),
+        };
+      }),
+    [sources, apis]
   );
 
   useEffect(() => {
@@ -83,5 +109,5 @@ export default function useVisualDataSources(visualId, bus, declared, bindings) 
     <SourceRuntime key={row.id} row={row} onStatus={onStatus} />
   ));
 
-  return { sources, apis, runtimes, loading: loading && !data, refetch };
+  return { sources, apis, status, runtimes, loading: loading && !data, refetch };
 }

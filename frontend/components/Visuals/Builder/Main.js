@@ -221,6 +221,7 @@ export default function VisualBuilder({ query, user }) {
   const {
     sources: dataSources,
     apis: sourceApis,
+    status: sourceStatus,
     runtimes: sourceRuntimes,
     refetch: refetchSources,
   } = useVisualDataSources(visualId, bus, declared, bindings);
@@ -710,6 +711,7 @@ export default function VisualBuilder({ query, user }) {
               <Preview
                 files={runFiles}
                 bus={bus}
+                sources={sourceStatus}
                 logs={logs}
                 paused={previewPaused}
                 onDeclare={onDeclare}

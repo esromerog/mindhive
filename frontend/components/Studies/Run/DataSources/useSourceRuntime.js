@@ -25,6 +25,7 @@ export default function useSourceRuntime(row) {
   );
 
   const receiversRef = useRef({}); // inputId -> receiver instance
+  const connectionSubsRef = useRef({}); // inputId -> isConnected$ subscription
   const camerasRef = useRef({}); // inputId -> VideoReceiver backing a vision receiver, if any
   const videoElsRef = useRef({}); // inputId -> HTMLVideoElement (camera-backed inputs only)
   const hiddenContainerRef = useRef(null); // detached host for those <video> elements
@@ -81,6 +82,8 @@ export default function useSourceRuntime(row) {
       subscriptions.forEach((s) => s.unsubscribe());
       pipeline?.stop();
       pipelineRef.current = null;
+      Object.values(connectionSubsRef.current).forEach((sub) => sub.unsubscribe());
+      connectionSubsRef.current = {};
       Object.values(receiversRef.current).forEach((r) => r?.disconnect?.());
       receiversRef.current = {};
       Object.values(camerasRef.current).forEach((c) => c?.disconnect?.());
@@ -94,11 +97,37 @@ export default function useSourceRuntime(row) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row.id]);
 
+  // Closes whatever one input is holding — its receiver, the camera under it
+  // and its hidden <video> — without touching its status.
+  const release = useCallback(async (inputId) => {
+    connectionSubsRef.current[inputId]?.unsubscribe();
+    delete connectionSubsRef.current[inputId];
+    const receiver = receiversRef.current[inputId];
+    delete receiversRef.current[inputId];
+    try {
+      await receiver?.disconnect?.();
+    } catch {
+      // Already gone — nothing to do.
+    }
+    const camera = camerasRef.current[inputId];
+    delete camerasRef.current[inputId];
+    try {
+      await camera?.disconnect?.();
+    } catch {
+      // Already gone — nothing to do.
+    }
+    videoElsRef.current[inputId]?.remove();
+    delete videoElsRef.current[inputId];
+  }, []);
+
   const connect = useCallback(
     async (inputId) => {
       const input = inputs.find((i) => i.id === inputId);
       if (!input) return;
       setInputStatus((s) => ({ ...s, [inputId]: { status: "connecting" } }));
+      // Reconnecting after a drop: the old receiver is dead but still held, and
+      // a Muse, for one, can't be reopened — start from a fresh one.
+      await release(inputId);
 
       let videoElement;
       try {
@@ -128,13 +157,29 @@ export default function useSourceRuntime(row) {
         // source nodes' `receiver` after the input id for exactly this reason.
         pipelineRef.current?.attachReceiver(input.id, receiver);
 
+        const deviceLabel = describeReceiver(receiver, input.receiver);
         setInputStatus((s) => ({
           ...s,
-          [inputId]: {
-            status: "connected",
-            deviceLabel: describeReceiver(receiver, input.receiver),
-          },
+          [inputId]: { status: "connected", deviceLabel },
         }));
+
+        // A device can drop on its own — a headband out of range, the LSL relay
+        // going away. Receivers report that on `isConnected$`, and some (LSL)
+        // come back by themselves, so the status follows it both ways.
+        connectionSubsRef.current[inputId] = receiver.isConnected$?.subscribe(
+          (isConnected) => {
+            setInputStatus((s) => {
+              const current = s[inputId]?.status;
+              if (!isConnected && current === "connected") {
+                return { ...s, [inputId]: { status: "lost", deviceLabel } };
+              }
+              if (isConnected && current === "lost") {
+                return { ...s, [inputId]: { status: "connected", deviceLabel } };
+              }
+              return s;
+            });
+          }
+        );
       } catch (err) {
         camerasRef.current[inputId]?.disconnect?.();
         delete camerasRef.current[inputId];
@@ -146,28 +191,16 @@ export default function useSourceRuntime(row) {
         }));
       }
     },
-    [inputs]
+    [inputs, release]
   );
 
-  const disconnect = useCallback(async (inputId) => {
-    const receiver = receiversRef.current[inputId];
-    delete receiversRef.current[inputId];
-    try {
-      await receiver?.disconnect?.();
-    } catch {
-      // Already gone — nothing to do.
-    }
-    const camera = camerasRef.current[inputId];
-    delete camerasRef.current[inputId];
-    try {
-      await camera?.disconnect?.();
-    } catch {
-      // Already gone — nothing to do.
-    }
-    videoElsRef.current[inputId]?.remove();
-    delete videoElsRef.current[inputId];
-    setInputStatus((s) => ({ ...s, [inputId]: { status: "disconnected" } }));
-  }, []);
+  const disconnect = useCallback(
+    async (inputId) => {
+      await release(inputId);
+      setInputStatus((s) => ({ ...s, [inputId]: { status: "disconnected" } }));
+    },
+    [release]
+  );
 
   const getBuffer = useCallback(
     (output, channelIndex) => buffersRef.current.get(channelKey(output, channelIndex)) || null,

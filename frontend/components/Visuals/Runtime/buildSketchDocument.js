@@ -15,9 +15,10 @@ const P5_URL = "https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js";
  * splices a parameter in or out, and makes the handshake literal: calling it is
  * what posts the declaration up to the app.
  */
-export const PARAMETERS_TEMPLATE = `// Every parameter this sketch exposes. The Parameters tab renders whatever you
-// declare here, and \`params.<key>\` holds the live value inside the sketch.
-//
+export const PARAMETERS_TEMPLATE = `
+
+// This holds the parameters declared in the "Parameters" tab
+
 // Kinds:
 //   { type: "number", default: 0.5, min: 0, max: 1, step: 0.01 }
 //   { type: "category", options: ["calm", "busy"], default: "calm" }
@@ -89,6 +90,10 @@ function preamble(nonce) {
   // Live parameter values. The app overwrites entries as mappings resolve; the
   // sketch only ever reads them.
   window.params = {};
+  // The linked data sources' connection state, replaced whole whenever a device
+  // connects or drops: [{ id, label, streaming, ready, inputs: [{ id, label,
+  // required, status, device }] }]. Read-only, like params.
+  window.sources = [];
   window.__paused = false;
   window.__crashed = false;
   // Whether the loop was running when the app paused it, so resuming doesn't
@@ -139,6 +144,14 @@ function preamble(nonce) {
     if (!data || data.protocol !== PROTOCOL) return;
     if (data.type === "init" || data.type === "params") {
       apply(data.values || {});
+    } else if (data.type === "sources") {
+      window.sources = data.sources || [];
+      // Same as a changed value: a sketch that stopped its own loop would never
+      // show the new state otherwise.
+      if (window.__paused || window.__crashed) return;
+      try {
+        if (typeof isLooping === "function" && !isLooping()) redraw();
+      } catch (e) {}
     } else if (data.type === "pause") {
       setPaused(!!data.paused);
     }
