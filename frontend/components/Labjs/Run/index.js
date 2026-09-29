@@ -31,6 +31,9 @@ export default function ExperimentWindow({
 }) {
   const [experiment, setExperiment] = useState(null);
   const completedRef = useRef(false);
+
+  const onFinishRef = useRef(onFinish);
+  onFinishRef.current = onFinish;
   const [ingestRunMessage] = useMutation(INGEST_RUN_MESSAGE);
   const isPlugin = study?.settings?.useExternalDevices;
   const script = task?.template?.script;
@@ -40,11 +43,7 @@ export default function ExperimentWindow({
     ? JSON.stringify(parameters.map((item) => [item?.name, item?.value]))
     : '';
 
-  // Lab.js only intercepts its forms' submit events while the screen that owns
-  // them is running. The last screen's form stays on the page, unbound, until
-  // the finish below has saved and the study swaps in the next view, and a
-  // second click or Enter there would navigate to the current URL with the
-  // field values as the query string — dropping the study's own parameters.
+  // Prevents second click from re-navigating with less parameters
   useEffect(() => {
     const blockNativeSubmit = (event) => {
       if (event.target.closest?.('[data-labjs-section]')) event.preventDefault();
@@ -109,7 +108,7 @@ export default function ExperimentWindow({
           }
         }
       }
-      onFinish({
+      onFinishRef.current({
         token: runContext?.datasetToken,
         runToken: runContext?.runToken,
         currentStep,
@@ -129,7 +128,6 @@ export default function ExperimentWindow({
     ingestRunMessage,
     isSavingData,
     isTaskRetaken,
-    onFinish,
     parameterSignature,
     runContext?.datasetToken,
     runContext?.runToken,
