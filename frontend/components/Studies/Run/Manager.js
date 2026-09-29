@@ -292,7 +292,7 @@ export default function Manager({
       const redirectPage =
         user.type === "GUEST"
           ? `/studies/${study?.slug}?guest=${user?.publicId}`
-          : `/dashboard/discover/studies?name=${study?.slug}`;
+          : `/studies/${study?.slug}`;
       window.location = redirectPage;
     } else {
       setPage("post");

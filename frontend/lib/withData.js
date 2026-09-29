@@ -20,7 +20,7 @@ function createClient({ initialState }) {
           );
         if (networkError)
           console.log(
-            `[Network error]: ${networkError}. Backend is unreachable. Is it running?`
+            `[Network error]: Operation: ${operation?.operationName}, ${networkError}. Backend is unreachable. Is it running?`
           );
       }),
       // GraphQL multipart uploads (e.g. opportunity/profile videos) POST the

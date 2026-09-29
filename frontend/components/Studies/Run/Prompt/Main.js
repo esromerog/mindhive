@@ -38,7 +38,7 @@ export default function Prompt({
   const redirectPage =
     user.type === "GUEST"
       ? `/studies/${study?.slug}?guest=${user?.publicId}`
-      : `/dashboard/discover/studies?name=${study?.slug}`;
+      : `/studies/${study?.slug}`;
 
   // by default, use the user response given at the first time to a task in the current version of the study
   const [dataUse, setDataUse] = useState(
