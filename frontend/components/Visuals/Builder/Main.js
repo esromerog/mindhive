@@ -408,10 +408,31 @@ export default function VisualBuilder({ query, user }) {
     updateVisual({
       variables: {
         id: visualId,
-        data: { parameters: writeBindings(bindingsRef.current) },
+        data: {
+          parameters: writeBindings(
+            bindingsRef.current,
+            hasDeclaration ? declared : null
+          ),
+        },
       },
     }).catch(() => {});
   };
+
+  // YQ lists a visual's parameters from this column, so a key declared in code
+  // has to reach it even if its binding is never touched. The update's response
+  // refreshes the cached `parameters`, which is what stops this repeating.
+  useEffect(() => {
+    if (!canEdit || !hasDeclaration) return;
+    const stored = readBindings(visual?.parameters).bindings;
+    if (
+      Array.isArray(visual?.parameters) &&
+      Object.keys(declared).every((key) => key in stored)
+    ) {
+      return;
+    }
+    bindingsDirty.current = true;
+    saveBindingsRef.current();
+  }, [declared]);
 
   // Local state moves on every call so the sketch follows the control; the
   // write to the database waits until the control has been let go of.

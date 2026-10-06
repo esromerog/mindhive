@@ -4,8 +4,12 @@
 // The declared key is the identifier. That is why there is no generated id
 // here — renaming a parameter in code becomes a visible rebinding rather than a
 // mapping that silently detaches from a row nobody can see.
-
-export const SCHEMA_VERSION = 3;
+//
+// The column is an array of `{ name, ...binding }`, one entry per parameter,
+// because that is the shape YQ reads (`parameters.map(({ name }) => …)`) from
+// the same Keystone. YQ ignores the extra fields and keeps them when it edits
+// an entry, so both frontends can share the column. A `suggested` list written
+// by YQ rides along inside the binding untouched; MindHive never writes one.
 
 export const EMPTY_BINDING = {
   // null | { kind: "manual", value }
@@ -25,36 +29,56 @@ export const EMPTY_BINDING = {
 };
 
 /**
- * Reads `Visual.parameters` in either shape.
+ * Reads `Visual.parameters` into bindings keyed by parameter name.
  *
- * YQ stores an array of `{ name, suggested }` and lets the dashboard own the
- * whole parameter definition. Those visuals still have to open, so an array is
- * read as "legacy" and turned into bindings keyed by name — the sketch simply
- * won't have declared anything, and the Parameters tab falls back to listing
- * these instead.
+ * A YQ-era entry is just `{ name, suggested }`, which reads as a binding with
+ * nothing mapped. The `{ schemaVersion, bindings }` object MindHive wrote
+ * before the column became an array is still understood, so those visuals open.
  *
  * @param {any} raw - The stored JSON column.
- * @returns {{ bindings: Record<string, object>, legacyParameters: Array }}
+ * @returns {{ bindings: Record<string, object> }}
  */
 export function readBindings(raw) {
   if (Array.isArray(raw)) {
     const bindings = {};
     for (const entry of raw) {
-      if (entry?.name) bindings[entry.name] = { ...EMPTY_BINDING };
+      if (!entry?.name) continue;
+      const { name, ...binding } = entry;
+      bindings[name] = binding;
     }
-    return { bindings, legacyParameters: raw };
+    return { bindings };
   }
 
   if (raw && typeof raw === "object" && raw.bindings) {
-    return { bindings: raw.bindings, legacyParameters: [] };
+    return { bindings: raw.bindings };
   }
 
-  return { bindings: {}, legacyParameters: [] };
+  return { bindings: {} };
 }
 
-/** The shape written back to `Visual.parameters`. */
-export function writeBindings(bindings) {
-  return { schemaVersion: SCHEMA_VERSION, bindings };
+/**
+ * The array written back to `Visual.parameters`: an entry for every declared
+ * key — so YQ lists the sketch's real parameters even for ones never touched —
+ * followed by any undeclared key that still carries a mapping, so a key that is
+ * mid-rename in the code doesn't lose the author's work.
+ *
+ * Until the sketch has declared anything (`declared` is null) nothing can be
+ * told apart from a stale entry, so every binding is kept.
+ *
+ * @param {Record<string, object>} bindings
+ * @param {Record<string, object> | null} declared - The normalized declaration.
+ * @returns {Array<{ name: string }>}
+ */
+export function writeBindings(bindings, declared) {
+  const entries = Object.keys(declared || {}).map((name) => ({
+    name,
+    ...bindings[name],
+  }));
+  for (const [name, binding] of Object.entries(bindings)) {
+    if (declared && name in declared) continue;
+    if (!declared || binding?.mapping) entries.push({ name, ...binding });
+  }
+  return entries;
 }
 
 /** The binding for a key, with defaults filled in for keys never touched. */

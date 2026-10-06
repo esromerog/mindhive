@@ -19,6 +19,11 @@ export const PARAMETERS_TEMPLATE = `
 
 // This holds the parameters declared in the "Parameters" tab
 
+// Each key declared below becomes a value in your sketch: params.size, or
+// params["size"]. The key is the name, and label is only what the Parameters
+// tab shows. (data["size"] also works, for sketches brought over from
+// YouQuantified.)
+
 // Kinds:
 //   { type: "number", default: 0.5, min: 0, max: 1, step: 0.01 }
 //   { type: "category", options: ["calm", "busy"], default: "calm" }
@@ -32,7 +37,14 @@ declareParameters({
 });
 `;
 
-export const ENTRY_TEMPLATE = `function setup() {
+export const ENTRY_TEMPLATE = `// Available in your sketch, besides p5:
+//   params.<name>       the live value of a parameter declared in parameters.js.
+//                       Read it inside draw(): it updates in place, so a copy
+//                       taken in setup() goes stale.
+//   sources             the linked data sources and whether each is connected.
+//   sendEvent(label, v) reports something that happened in the sketch.
+
+function setup() {
   createCanvas(windowWidth, windowHeight);
   noStroke();
 }
@@ -90,6 +102,10 @@ function preamble(nonce) {
   // Live parameter values. The app overwrites entries as mappings resolve; the
   // sketch only ever reads them.
   window.params = {};
+  // YQ sketches read their values from data. Same object, so it stays live as
+  // params is updated in place — and plain assignment, so a sketch that
+  // declares its own data is free to.
+  window.data = window.params;
   // The linked data sources' connection state, replaced whole whenever a device
   // connects or drops: [{ id, label, streaming, ready, inputs: [{ id, label,
   // required, status, device }] }]. Read-only, like params.
