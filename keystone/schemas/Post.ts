@@ -10,13 +10,20 @@ import {
   json,
 } from "@keystone-6/core/fields";
 
+import {
+  signedInWrites,
+  postQueryFilter,
+  postOwnerFilter,
+} from "../access";
+
 export const Post = list({
   access: {
-    operation: {
-      query: () => true,
-      create: () => true,
-      update: () => true,
-      delete: () => true,
+    // Author/journal owner reads and writes; their class staff may read.
+    operation: signedInWrites,
+    filter: {
+      query: postQueryFilter,
+      update: postOwnerFilter,
+      delete: postOwnerFilter,
     },
   },
   fields: {

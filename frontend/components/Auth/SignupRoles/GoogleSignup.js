@@ -8,8 +8,9 @@ const clientID =
 import { GOOGLE_SIGNUP } from "../../Mutations/Auth";
 import { SIGNIN_MUTATION } from "../../Mutations/User";
 import { CURRENT_USER_QUERY } from "../../Queries/User";
+import { googleAccountEmail } from "../../../lib/googleAccountEmail";
 
-export default function GoogleSignup({ role, classCode }) {
+export default function GoogleSignup({ role, classCode, invitationCode }) {
   const router = useRouter();
   const [googleSignup, { loading }] = useMutation(GOOGLE_SIGNUP);
   const [signin, { data: signinData, loading: signinLoading }] = useMutation(
@@ -21,11 +22,20 @@ export default function GoogleSignup({ role, classCode }) {
 
   const handleSuccess = async (e) => {
     const res = await googleSignup({
-      variables: { token: e.tokenId, role: role, classCode: classCode },
+      variables: {
+        token: e.tokenId,
+        role: role,
+        classCode: classCode,
+        invitationCode: invitationCode || null,
+      },
     });
-    const email = res?.data?.googleSignup?.email;
+    const email = res?.data?.googleSignup?.email || googleAccountEmail(e);
     // Normalize email to lowercase
     const normalizedEmail = email?.toLowerCase().trim();
+    if (!normalizedEmail) {
+      handleFailure();
+      return;
+    }
     // log in user
     const login = await signin({
       variables: {

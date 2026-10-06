@@ -11,13 +11,21 @@ import {
 } from "@keystone-6/core/fields";
 import uniqid from "uniqid";
 
+import {
+  signedInWrites,
+  homeworkQueryFilter,
+  homeworkUpdateFilter,
+  authorFilter,
+} from "../access";
+
 export const Homework = list({
   access: {
-    operation: {
-      query: () => true,
-      create: () => true,
-      update: () => true,
-      delete: () => true,
+    // Author, class staff (grading) and peer reviewers; see access.ts.
+    operation: signedInWrites,
+    filter: {
+      query: homeworkQueryFilter,
+      update: homeworkUpdateFilter,
+      delete: authorFilter,
     },
   },
   fields: {

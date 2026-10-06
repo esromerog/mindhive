@@ -2,6 +2,8 @@
 
 import { permissionsList } from "./schemas/fields";
 import { ListAccessArgs, Session } from "./types";
+import { Prisma } from "@prisma/client";
+import { requestScope } from "./lib/requestScope";
 
 export function isSignedIn({ session }: ListAccessArgs) {
   return !!session; // if undefinened, return false
@@ -23,8 +25,19 @@ const generatedPermissions = Object.fromEntries(
 // Permissions check if someone meets a criteria - yes or no
 // Issue #7: removed hardcoded `isAwesome` username bypass; use the
 // canAccessAdminUI permission flag stored on the user's Role instead.
+const TICKET_ROLE_NAMES = ["ADMIN", "TESTER"];
+
 export const permissions = {
   ...generatedPermissions,
+  // ADMIN keeps the stored flag. TESTER is granted the same ticket access by name.
+  canManageTickets({ session }: ListAccessArgs) {
+    return (
+      generatedPermissions.canManageTickets({ session }) ||
+      !!session?.data.permissions?.some((role) =>
+        TICKET_ROLE_NAMES.includes(role?.name)
+      )
+    );
+  },
 };
 
 /** Admin UI operators who may manage network memberships and invites. */
@@ -68,6 +81,669 @@ function classStaffSome(me: string) {
       { mentors: { some: { id: { equals: me } } } },
     ],
   };
+}
+
+/** Platform user admins (the canManageUsers permission). */
+export function isAdmin({ session }: ListAccessArgs) {
+  return !!permissions.canManageUsers({ session });
+}
+
+/**
+ * Class filter: classes where the session user is creator, co-teacher or
+ * mentor. Admins match every class; anonymous callers match none.
+ */
+export function classStaffFilter({ session }: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  return classStaffSome(session.itemId);
+}
+
+/**
+ * Operation access for lists anyone may read but only signed-in users may
+ * change. Per-item ownership is added with filters where it applies.
+ */
+export const signedInWrites = {
+  query: () => true,
+  create: isSignedIn,
+  update: isSignedIn,
+  delete: isSignedIn,
+};
+
+function authorOrCollaboratorWhere(me: string) {
+  return {
+    OR: [
+      { author: { id: { equals: me } } },
+      { collaborators: { some: { id: { equals: me } } } },
+    ],
+  };
+}
+
+/** Filter: items the session user authored or collaborates on; admins: all. */
+export function authorOrCollaboratorFilter({ session }: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  return authorOrCollaboratorWhere(String(session.itemId));
+}
+
+/** Filter: items the session user authored; admins: all. */
+export function authorFilter({ session }: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  return { author: { id: { equals: String(session.itemId) } } };
+}
+
+/**
+ * Filter for records owned through their `study` relation (StudyImage,
+ * StudyVersion, StudyDataSource): the study's author or collaborators.
+ */
+export function studyEditorFilter({ session }: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  return { study: authorOrCollaboratorWhere(String(session.itemId)) };
+}
+
+/**
+ * Study updates: author, collaborators, and staff of a class the study is
+ * linked to or whose students author it (class dashboards assign students to
+ * studies and change submission status).
+ */
+export function studyUpdateFilter({ session }: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  const me = String(session.itemId);
+  const staffClass = { some: classStaffSome(me) };
+  return {
+    OR: [
+      ...authorOrCollaboratorWhere(me).OR,
+      { classes: staffClass },
+      { author: { studentIn: staffClass } },
+      { collaborators: { some: { studentIn: staffClass } } },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Per-request id lookups for the read filters below.
+//
+// These filters used to express membership as nested relation chains (e.g.
+// assignment → card → section → board → class → students). Prisma turns each
+// chain into nested subqueries that run for every row, and again for every
+// relation a response resolves, which made board and card loads slow. Instead
+// each filter looks up the session user's ids once — classes they staff or
+// study in, networks they are connected to — and filters
+// with `id in [...]`. The rules are unchanged; only the SQL is cheaper.
+//
+// Lookups are cached per HTTP request (queries and mutations). Any write to a
+// model these lookups read — class/network membership (Class, ClassNetwork,
+// Profile) and the board → section → card → assignment chain — or any raw SQL
+// write clears that request's cache once the write completes, so a mutation
+// that changes them and then reads in the same request sees the new state. Clearing happens in Prisma middleware
+// (attachAccessCacheInvalidation), which sees every write: context.db,
+// context.query, sudo and raw. Without the cache, mutations that run many
+// access checks (copyProposalBoard: hundreds) re-ran these lookups for each
+// check and exhausted the database connection pool.
+// ---------------------------------------------------------------------------
+
+const idLookupCache = new WeakMap<object, Map<string, Promise<string[]>>>();
+
+function cachedIds(
+  context: any,
+  key: string,
+  compute: () => Promise<string[]>
+): Promise<string[]> {
+  const req = context?.req;
+  if (!req) return compute();
+  let cache = idLookupCache.get(req);
+  if (!cache) {
+    cache = new Map();
+    idLookupCache.set(req, cache);
+  }
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const lookup = compute();
+  cache.set(key, lookup);
+  return lookup;
+}
+
+const ACCESS_INPUT_MODELS = new Set([
+  "Class",
+  "ClassNetwork",
+  "Profile",
+  "ProposalBoard",
+  "ProposalSection",
+  "ProposalCard",
+  "Assignment",
+  "Homework",
+  "Study",
+]);
+const WRITE_ACTIONS = new Set([
+  "create",
+  "createMany",
+  "update",
+  "updateMany",
+  "upsert",
+  "delete",
+  "deleteMany",
+  "executeRaw",
+  "executeRawUnsafe",
+]);
+
+/** Prisma middleware: clears the request's id cache after writes it depends on. */
+export function attachAccessCacheInvalidation(prisma: any) {
+  prisma.$use(async (params: any, next: (p: any) => Promise<any>) => {
+    try {
+      return await next(params);
+    } finally {
+      const isWrite = WRITE_ACTIONS.has(params.action);
+      const touchesInputs = !params.model || ACCESS_INPUT_MODELS.has(params.model);
+      if (isWrite && touchesInputs) {
+        const req = requestScope.getStore()?.req;
+        if (req) idLookupCache.delete(req);
+      }
+    }
+  });
+}
+
+/** Ids of `listKey` items matching `where`, read as sudo. */
+async function findIds(context: any, listKey: string, where: any) {
+  const rows = await context.sudo().query[listKey].findMany({
+    where,
+    query: "id",
+  });
+  return rows.map((row: { id: string }) => String(row.id));
+}
+
+/** Ids of classes where the session user is creator, co-teacher or mentor. */
+export function staffClassIds(context: any): Promise<string[]> {
+  const me = context?.session?.itemId;
+  if (!me) return Promise.resolve([]);
+  return cachedIds(context, "staffClasses", () =>
+    findIds(context, "Class", classStaffSome(String(me)))
+  );
+}
+
+/** Ids of classes where the session user is a student. */
+function studentClassIds(context: any): Promise<string[]> {
+  const me = context?.session?.itemId;
+  if (!me) return Promise.resolve([]);
+  return cachedIds(context, "studentClasses", () =>
+    findIds(context, "Class", {
+      students: { some: { id: { equals: String(me) } } },
+    })
+  );
+}
+
+/** Ids of classes the session user belongs to (classMemberWhere). */
+async function memberClassIds(context: any): Promise<string[]> {
+  const [staff, student] = await Promise.all([
+    staffClassIds(context),
+    studentClassIds(context),
+  ]);
+  return [...new Set([...staff, ...student])];
+}
+
+/**
+ * Ids of class networks the session user is connected to: creator, admin,
+ * member profile, public networks, and networks of their classes.
+ */
+function connectedNetworkIds(context: any): Promise<string[]> {
+  const me = context?.session?.itemId;
+  if (!me) return Promise.resolve([]);
+  return cachedIds(context, "connectedNetworks", async () => {
+    const memberIds = await memberClassIds(context);
+    const meId = String(me);
+    return findIds(context, "ClassNetwork", {
+      OR: [
+        { creator: { id: { equals: meId } } },
+        { admins: { some: { id: { equals: meId } } } },
+        { memberProfiles: { some: { id: { equals: meId } } } },
+        { isPublic: { equals: true } },
+        ...(memberIds.length
+          ? [{ classes: { some: { id: { in: memberIds } } } }]
+          : []),
+      ],
+    });
+  });
+}
+
+/**
+ * Boards whose cards (and linked assignments) the session user may use:
+ * their own, collaborations, class boards and class templates of a class
+ * they belong to, platform templates and default boards.
+ *
+ * Matched by the user's class ids rather than by a list of board ids: a
+ * teacher's usable boards include every student board in every class they
+ * ever taught (thousands of ids), while their class list stays short.
+ */
+async function usableBoardWhere(context: any) {
+  const me = String(context?.session?.itemId);
+  const memberIds = await memberClassIds(context);
+  const inMemberClass = { some: { id: { in: memberIds } } };
+  return {
+    OR: [
+      { author: { id: { equals: me } } },
+      { collaborators: { some: { id: { equals: me } } } },
+      ...(memberIds.length
+        ? [
+            { usedInClass: { id: { in: memberIds } } },
+            { templatesForClass: inMemberClass },
+            { templateForClasses: inMemberClass },
+          ]
+        : []),
+      { isTemplate: { equals: true } },
+      { isDefault: { equals: true } },
+    ],
+  };
+}
+
+/**
+ * Ids of assignments linked to a card on a board the session user may use
+ * (usableBoardWhere).
+ *
+ * Computed in two plain steps — the usable board ids, then one indexed join
+ * section → card → assignment link — rather than as a Prisma relation filter
+ * on Assignment (proposalCards → section → board). Postgres ran that nested
+ * filter by re-joining every card with every section for each card row: 5–10 s
+ * per card open in production, and minutes on larger data.
+ */
+function boardAssignmentIds(context: any): Promise<string[]> {
+  return cachedIds(context, "boardAssignments", async () =>
+    assignmentIdsOnBoards(context, await usableBoardWhere(context))
+  );
+}
+
+/**
+ * Ids of assignments linked to a card on a board the session user owns or
+ * collaborates on, or a class template board of a class they staff — the
+ * boards whose linked assignments they may edit (assignmentUpdateFilter).
+ */
+function ownedBoardAssignmentIds(context: any): Promise<string[]> {
+  return cachedIds(context, "ownedBoardAssignments", async () => {
+    const me = String(context?.session?.itemId);
+    const staffIds = await staffClassIds(context);
+    return assignmentIdsOnBoards(context, {
+      OR: [
+        { author: { id: { equals: me } } },
+        { collaborators: { some: { id: { equals: me } } } },
+        ...(staffIds.length
+          ? [{ templatesForClass: { some: { id: { in: staffIds } } } }]
+          : []),
+      ],
+    });
+  });
+}
+
+/** Ids of assignments linked to a card on any board matching `boardWhere`. */
+async function assignmentIdsOnBoards(
+  context: any,
+  boardWhere: any
+): Promise<string[]> {
+  const boardIds = await findIds(context, "ProposalBoard", boardWhere);
+  const ids = new Set<string>();
+  // Chunked to stay well under database bind-parameter limits.
+  for (let i = 0; i < boardIds.length; i += 5000) {
+    const chunk = boardIds.slice(i, i + 5000);
+    const rows: { id: string }[] = await context.prisma.$queryRaw(Prisma.sql`
+      SELECT DISTINCT l."A" AS "id"
+      FROM "ProposalSection" s
+      JOIN "ProposalCard" c ON c."section" = s."id"
+      JOIN "_Assignment_proposalCards" l ON l."B" = c."id"
+      WHERE s."board" IN (${Prisma.join(chunk)})
+    `);
+    rows.forEach((row) => ids.add(String(row.id)));
+  }
+  return [...ids];
+}
+
+/**
+ * Profiles that are students or mentors in a class the session user staffs,
+ * or null when the user staffs no class (the clause can never match).
+ */
+async function profileInStaffClassWhere(context: any) {
+  const profileIds = await staffClassMemberIds(context);
+  if (profileIds.length === 0) return null;
+  return { id: { in: profileIds } };
+}
+
+/**
+ * Ids of profiles that are students or mentors in a class the session user
+ * staffs. A plain id list lets Postgres use the author/creator indexes; the
+ * equivalent relation filter (author → studentIn/mentorIn → class) made it
+ * scan every homework, journal or post row.
+ */
+function staffClassMemberIds(context: any): Promise<string[]> {
+  return cachedIds(context, "staffClassMembers", async () => {
+    const classIds = await staffClassIds(context);
+    if (classIds.length === 0) return [];
+    const staffClass = { some: { id: { in: classIds } } };
+    return findIds(context, "Profile", {
+      OR: [{ studentIn: staffClass }, { mentorIn: staffClass }],
+    });
+  });
+}
+
+/** Ids of assignments of classes the session user staffs. */
+function staffClassAssignmentIds(context: any): Promise<string[]> {
+  return cachedIds(context, "staffClassAssignments", async () => {
+    const classIds = await staffClassIds(context);
+    if (classIds.length === 0) return [];
+    return findIds(context, "Assignment", {
+      classes: { some: { id: { in: classIds } } },
+    });
+  });
+}
+
+/**
+ * Class reads: members, plus people connected through the class's networks
+ * (network creators/admins/members, classes in the same network, public
+ * networks). Roster emails are protected separately by Profile field rules.
+ */
+export async function classQueryFilter({ session, context }: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  const [memberIds, networkIds] = await Promise.all([
+    memberClassIds(context),
+    connectedNetworkIds(context),
+  ]);
+  return {
+    OR: [
+      { id: { in: memberIds } },
+      ...(networkIds.length
+        ? [{ networks: { some: { id: { in: networkIds } } } }]
+        : []),
+    ],
+  };
+}
+
+/** Journal reads: the owner and staff of the owner's classes. */
+export async function journalQueryFilter({
+  session,
+  context,
+}: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  const me = String(session.itemId);
+  const inStaffClass = await profileInStaffClassWhere(context);
+  return {
+    OR: [
+      { creator: { id: { equals: me } } },
+      ...(inStaffClass ? [{ creator: inStaffClass }] : []),
+    ],
+  };
+}
+
+/** Journal writes: the owner. */
+export function journalOwnerFilter({ session }: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  return { creator: { id: { equals: String(session.itemId) } } };
+}
+
+/** Post reads: the author or journal owner, and staff of their classes. */
+export async function postQueryFilter({ session, context }: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  const me = String(session.itemId);
+  const inStaffClass = await profileInStaffClassWhere(context);
+  return {
+    OR: [
+      { author: { id: { equals: me } } },
+      { journal: { creator: { id: { equals: me } } } },
+      ...(inStaffClass
+        ? [
+            { author: inStaffClass },
+            { journal: { creator: inStaffClass } },
+          ]
+        : []),
+    ],
+  };
+}
+
+/** Post writes: the author or the journal owner. */
+export function postOwnerFilter({ session }: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  const me = String(session.itemId);
+  return {
+    OR: [
+      { author: { id: { equals: me } } },
+      { journal: { creator: { id: { equals: me } } } },
+    ],
+  };
+}
+
+/** Homework clauses for class staff (grading); empty for non-staff. */
+async function homeworkStaffWhere(context: any) {
+  const [memberIds, assignmentIds] = await Promise.all([
+    staffClassMemberIds(context),
+    staffClassAssignmentIds(context),
+  ]);
+  return [
+    ...(memberIds.length ? [{ author: { id: { in: memberIds } } }] : []),
+    ...(assignmentIds.length
+      ? [{ assignment: { id: { in: assignmentIds } } }]
+      : []),
+  ];
+}
+
+/**
+ * Ids of homework on a card of a study's main project board (peer reviewers
+ * may read these). One indexed join per request: as a relation filter on
+ * Homework (proposalCard → section → board → studyMain), Prisma's SQL made
+ * Postgres scan every homework row through that chain — and again for its
+ * "relation is set" checks — on every homework query.
+ */
+const PEER_HOMEWORK_LIST_LIMIT = 20000;
+
+function peerReviewHomeworkIds(context: any): Promise<string[]> {
+  return cachedIds(context, "peerReviewHomework", async () => {
+    const rows: { id: string }[] = await context.prisma.$queryRaw(Prisma.sql`
+      SELECT h."id" AS "id"
+      FROM "ProposalBoard" b
+      JOIN "ProposalSection" s ON s."board" = b."id"
+      JOIN "ProposalCard" c ON c."section" = s."id"
+      JOIN "Homework" h ON h."proposalCard" = c."id"
+      WHERE b."studyMain" IS NOT NULL
+    `);
+    return rows.map((row) => String(row.id));
+  });
+}
+
+/**
+ * Homework reads: the author, class staff, and (peer review) any signed-in
+ * user when the homework sits on a card of a study's main project board.
+ */
+export async function homeworkQueryFilter({
+  session,
+  context,
+}: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  const me = String(session.itemId);
+  const [staffWhere, peerIds] = await Promise.all([
+    homeworkStaffWhere(context),
+    peerReviewHomeworkIds(context),
+  ]);
+  // Past the limit an id list risks database parameter limits, so fall back
+  // to the (slow but equivalent) relation filter.
+  const peerWhere =
+    peerIds.length > PEER_HOMEWORK_LIST_LIMIT
+      ? [{ proposalCard: { section: { board: { NOT: [{ studyMain: null }] } } } }]
+      : peerIds.length
+        ? [{ id: { in: peerIds } }]
+        : [];
+  return {
+    OR: [{ author: { id: { equals: me } } }, ...staffWhere, ...peerWhere],
+  };
+}
+
+/** Homework updates: the author, and class staff (grading). */
+export async function homeworkUpdateFilter({
+  session,
+  context,
+}: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  const me = String(session.itemId);
+  return {
+    OR: [
+      { author: { id: { equals: me } } },
+      ...(await homeworkStaffWhere(context)),
+    ],
+  };
+}
+
+/**
+ * Assignment reads: the author, class staff, students of the class once the
+ * assignment is published, platform templates, and assignments linked to
+ * cards on boards the user can use (copyProposalBoard reads and connects
+ * these as the caller).
+ */
+export async function assignmentQueryFilter({
+  session,
+  context,
+}: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  const me = String(session.itemId);
+  const [staffIds, studentIds, boardAssignments] = await Promise.all([
+    staffClassIds(context),
+    studentClassIds(context),
+    boardAssignmentIds(context),
+  ]);
+  return {
+    OR: [
+      { author: { id: { equals: me } } },
+      ...(staffIds.length
+        ? [{ classes: { some: { id: { in: staffIds } } } }]
+        : []),
+      ...(studentIds.length
+        ? [
+            {
+              classes: { some: { id: { in: studentIds } } },
+              public: { equals: true },
+            },
+          ]
+        : []),
+      { isTemplate: { equals: true } },
+      ...(boardAssignments.length
+        ? [{ id: { in: boardAssignments } }]
+        : []),
+    ],
+  };
+}
+
+/**
+ * Assignment updates: the author, staff of its classes, and owners of a
+ * board it is linked to (template boards re-point linked assignments).
+ */
+export async function assignmentUpdateFilter({
+  session,
+  context,
+}: ListAccessArgs) {
+  if (!session?.itemId) return false;
+  if (isAdmin({ session })) return true;
+  const me = String(session.itemId);
+  const [staffIds, boardAssignments] = await Promise.all([
+    staffClassIds(context),
+    ownedBoardAssignmentIds(context),
+  ]);
+  return {
+    OR: [
+      { author: { id: { equals: me } } },
+      ...(staffIds.length
+        ? [{ classes: { some: { id: { in: staffIds } } } }]
+        : []),
+      ...(boardAssignments.length
+        ? [{ id: { in: boardAssignments } }]
+        : []),
+    ],
+  };
+}
+
+// Per-request memo for async access checks. Field access runs once per item
+// and field, so a profile list with several private fields would otherwise
+// repeat the same lookup many times in one GraphQL response.
+const requestMemo = new WeakMap<object, Map<string, Promise<boolean>>>();
+
+function memoPerRequest(
+  context: any,
+  key: string,
+  compute: () => Promise<boolean>
+): Promise<boolean> {
+  const scope = context?.req ?? context;
+  if (!scope) return compute();
+  let memo = requestMemo.get(scope);
+  if (!memo) {
+    memo = new Map();
+    requestMemo.set(scope, memo);
+  }
+  const cached = memo.get(key);
+  if (cached) return cached;
+  const result = compute();
+  memo.set(key, result);
+  return result;
+}
+
+/**
+ * Private profile data (email, study/consent info, personal work) is visible
+ * to the profile owner, admins, and staff of a class the profile belongs to.
+ */
+export function canViewPrivateProfile(
+  context: any,
+  profileId: string | null | undefined
+): Promise<boolean> {
+  const session = context?.session;
+  const me = session?.itemId;
+  if (!me || !profileId) return Promise.resolve(false);
+  if (String(profileId) === String(me)) return Promise.resolve(true);
+  if (isAdmin({ session })) return Promise.resolve(true);
+  return memoPerRequest(context, `privateProfile:${profileId}`, async () => {
+    const classIds = await staffClassIds(context);
+    if (classIds.length === 0) return false;
+    const inStaffClass = { some: { id: { in: classIds } } };
+    const matches = await context.sudo().db.Profile.count({
+      where: {
+        id: { equals: String(profileId) },
+        OR: [
+          { studentIn: inStaffClass },
+          { mentorIn: inStaffClass },
+          { teachingTeamIn: inStaffClass },
+        ],
+      },
+    });
+    return matches > 0;
+  });
+}
+
+/**
+ * Participant data (info, generalInfo, studiesInfo: demographics and consent
+ * answers) is also visible to the author and collaborators of a study the
+ * profile took part in, for Test & Collect.
+ */
+export function canViewParticipantData(
+  context: any,
+  profileId: string | null | undefined
+): Promise<boolean> {
+  const me = context?.session?.itemId;
+  if (!me || !profileId) return Promise.resolve(false);
+  return memoPerRequest(context, `participantData:${profileId}`, async () => {
+    if (await canViewPrivateProfile(context, profileId)) return true;
+    const matches = await context.sudo().db.Profile.count({
+      where: {
+        id: { equals: String(profileId) },
+        participantIn: {
+          some: {
+            OR: [
+              { author: { id: { equals: String(me) } } },
+              { collaborators: { some: { id: { equals: String(me) } } } },
+            ],
+          },
+        },
+      },
+    });
+    return matches > 0;
+  });
 }
 
 /**

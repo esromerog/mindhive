@@ -12,7 +12,12 @@ import {
   multiselect,
   file,
 } from "@keystone-6/core/fields";
-import { permissions, rules } from "../access";
+import {
+  permissions,
+  rules,
+  canViewParticipantData,
+  canViewPrivateProfile,
+} from "../access";
 import {
   ensureTeacherPermission,
   relationshipAssignedIds,
@@ -38,6 +43,21 @@ const customConfig: Config = {
   length: 3,
 };
 
+// Read rules for private profile fields. Denied reads resolve to null.
+// Contact details for other users belong in publicMail, which stays public.
+const ownerOrStaffRead = {
+  read: ({ context, item }: any) => canViewPrivateProfile(context, item?.id),
+};
+const participantDataRead = {
+  read: ({ context, item }: any) => canViewParticipantData(context, item?.id),
+};
+const ownerOnlyRead = {
+  read: ({ session, item }: any) =>
+    !!session?.itemId &&
+    (String(item?.id) === String(session.itemId) ||
+      !!permissions.canManageUsers({ session })),
+};
+
 export const Profile = list({
   ui: {
     listView: {
@@ -60,7 +80,10 @@ export const Profile = list({
       // is human and then create with sudo. Leaving this open let bots POST
       // straight to /api/graphql and skip the signup UI entirely.
       create: ({ session }) => permissions.canManageUsers({ session }),
-      update: () => true,
+      // Only the profile owner or a user admin. Changes to other people's
+      // class/project memberships go through the Class / ProposalBoard side
+      // or sudo custom mutations (e.g. joinClass).
+      update: rules.canManageUsers,
       delete: rules.canManageUsers,
     },
   },
@@ -107,7 +130,7 @@ export const Profile = list({
       isIndexed: "unique",
       isFilterable: true,
       access: {
-        read: () => true,
+        ...ownerOrStaffRead,
         create: () => true,
         update: rules.canManageUsers,
       },
@@ -124,19 +147,25 @@ export const Profile = list({
     permissions: relationship({
       ref: "Permission.assignedTo",
       many: true,
+      // Role grants are admin-only. Signup, joinClass and teaching-team hooks
+      // assign roles through sudo.
+      access: {
+        create: ({ session }) => permissions.canManageUsers({ session }),
+        update: ({ session }) => permissions.canManageUsers({ session }),
+      },
     }),
-    info: json(),
-    generalInfo: json(),
-    studiesInfo: json(),
-    consentsInfo: json(),
-    tasksInfo: json(),
+    info: json({ access: participantDataRead }),
+    generalInfo: json({ access: participantDataRead }),
+    studiesInfo: json({ access: participantDataRead }),
+    consentsInfo: json({ access: ownerOnlyRead }),
+    tasksInfo: json({ access: ownerOnlyRead }),
     isPublic: checkbox({ isFilterable: true }),
     password: password({
       validation: { isRequired: true },
       access: {
         read: () => true,
         create: () => true,
-        update: () => true,
+        update: rules.canManageUsers,
       },
     }),
     facebook: text(),
@@ -168,9 +197,35 @@ export const Profile = list({
       many: true,
     }),
     teacherIn: relationship({ ref: "Class.creator", many: true }),
-    teachingTeamIn: relationship({ ref: "Class.teachingTeam", many: true }),
-    mentorIn: relationship({ ref: "Class.mentors", many: true }),
-    studentIn: relationship({ ref: "Class.students", many: true }),
+    // Joining a teaching team grants the TEACHER role (see afterOperation), so
+    // it is not self-service here; class staff add co-teachers via Class.
+    teachingTeamIn: relationship({
+      ref: "Class.teachingTeam",
+      many: true,
+      access: {
+        create: ({ session }) => permissions.canManageUsers({ session }),
+        update: ({ session }) => permissions.canManageUsers({ session }),
+      },
+    }),
+    // Class membership decides who counts as class staff (mentors) and whose
+    // private data staff can see, so it is not self-service. Joining goes
+    // through joinClass / signup (sudo); staff manage rosters via Class.
+    mentorIn: relationship({
+      ref: "Class.mentors",
+      many: true,
+      access: {
+        create: ({ session }) => permissions.canManageUsers({ session }),
+        update: ({ session }) => permissions.canManageUsers({ session }),
+      },
+    }),
+    studentIn: relationship({
+      ref: "Class.students",
+      many: true,
+      access: {
+        create: ({ session }) => permissions.canManageUsers({ session }),
+        update: ({ session }) => permissions.canManageUsers({ session }),
+      },
+    }),
     classNetworksCreated: relationship({
       ref: "ClassNetwork.creator",
       many: true,

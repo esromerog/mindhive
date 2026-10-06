@@ -151,7 +151,13 @@ export default function TicketOverlay() {
   const [thumbUrl, setThumbUrl] = useState(null);
 
   const canManageTickets = useMemo(
-    () => !!user?.permissions?.some((permission) => permission?.canManageTickets),
+    () =>
+      !!user?.permissions?.some(
+        (permission) =>
+          permission?.canManageTickets ||
+          permission?.name === "ADMIN" ||
+          permission?.name === "TESTER"
+      ),
     [user]
   );
 
@@ -684,17 +690,19 @@ export default function TicketOverlay() {
                           {capturing
                             ? "Capturing…"
                             : shot?.shapes?.length
-                              ? "Edit markup"
-                              : "Preview & mark up"}
+                              ? "Edit your marks"
+                              : "Draw on the screenshot"}
                         </Button>
                         {shot && (
                           <Button variant="text" onClick={() => setShot(null)}>
                             Retake
                           </Button>
                         )}
-                        {!shot && (
-                          <ShotHint>Optional — circle what is wrong, add arrows and notes.</ShotHint>
-                        )}
+                        <ShotHint>
+                          {shot?.shapes?.length
+                            ? "Your marks are part of this screenshot — there is nothing to add afterwards."
+                            : "Taken when you file. Draw on this one to point at what is wrong; you never need a second screenshot."}
+                        </ShotHint>
                       </ShotActions>
                     </ShotRow>
                   )}

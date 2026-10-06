@@ -61,7 +61,7 @@ export const SPONSOR_ONBOARDING_STATE = gql`
 
 // get the current user
 export const CURRENT_USER_QUERY = gql`
-  query {
+  query CURRENT_USER_QUERY {
     authenticatedItem {
       ... on Profile {
         id
@@ -145,7 +145,7 @@ export const CURRENT_USER_QUERY = gql`
 
 // get the information about user's classes
 export const GET_USER_CLASSES = gql`
-  query {
+  query GET_USER_CLASSES {
     authenticatedItem {
       ... on Profile {
         id
@@ -242,7 +242,7 @@ export const GET_USER_CLASSES = gql`
 
 // get the information about studies the user participated in
 export const GET_USER_STUDIES = gql`
-  query {
+  query GET_USER_STUDIES {
     authenticatedItem {
       ... on Profile {
         id
@@ -500,6 +500,7 @@ export const PUBLIC_USER_QUERY = gql`
       id
       username
       email
+      publicMail
       publicId
       publicReadableId
       type
@@ -615,6 +616,7 @@ export const GET_CONNECT_USERS = gql`
       id
       username
       email
+      publicMail
       publicId
       publicReadableId
       permissions {
@@ -864,6 +866,7 @@ export const GET_PUBLIC_PROFILE = gql`
       id
       username
       email
+      publicMail
       publicId
       publicReadableId
       type
@@ -893,7 +896,7 @@ export const GET_PUBLIC_PROFILE = gql`
 
 // query all users that a user follows
 export const MY_FAVORITE_PEOPLE = gql`
-  query {
+  query MY_FAVORITE_PEOPLE {
     authenticatedItem {
       ... on Profile {
         id
@@ -901,6 +904,7 @@ export const MY_FAVORITE_PEOPLE = gql`
           id
           username
           email
+          publicMail
           publicId
           publicReadableId
           permissions {
@@ -945,7 +949,7 @@ export const MY_FAVORITE_PEOPLE = gql`
 
 // get short updates for notifying the user
 export const GET_UPDATES = gql`
-  query {
+  query GET_USER_UPDATES {
     authenticatedItem {
       ... on User {
         id
@@ -964,7 +968,7 @@ export const GET_UPDATES = gql`
 
 // get full updates for the news page
 export const GET_FULL_UPDATES = gql`
-  query {
+  query GET_FULL_UPDATES {
     authenticatedItem {
       ... on User {
         id
@@ -1045,7 +1049,7 @@ export const PUBLIC_USERS_QUERY = gql`
 
 // get the current user
 export const LIGHT_USER_QUERY = gql`
-  query {
+  query LIGHT_USER_QUERY {
     authenticatedItem {
       ... on User {
         id
@@ -1079,7 +1083,7 @@ export const GET_PERSON_ID_BY_WALLET = gql`
 
 // query the full profile of the user
 export const GET_PROFILE = gql`
-  query {
+  query GET_PROFILE {
     authenticatedItem {
       ... on Profile {
         id
@@ -1173,6 +1177,7 @@ export const GET_PROFILE = gql`
             firstName
             lastName
             email
+            publicMail
             image {
               keystoneImage {
                 url
@@ -1226,6 +1231,7 @@ export const GET_PROFILE = gql`
             firstName
             lastName
             email
+            publicMail
             image {
               keystoneImage {
                 url

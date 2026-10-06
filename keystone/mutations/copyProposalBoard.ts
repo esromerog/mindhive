@@ -2,6 +2,36 @@ import uniqid from "uniqid";
 import { provisionFormDefinitionForMilestone } from "./createTemplateMilestone";
 import { syncClassTemplateBoards } from "./utils/classTemplateBoards";
 
+// Copies run with limited parallelism. Creating every section, card and
+// assignment at once (each insert also access-checks what it connects)
+// exhausted the database connection pool on large boards: the copy failed
+// after Prisma's 10s pool timeout, and every other request stalled meanwhile.
+const CARD_CONCURRENCY = 4;
+
+/** Runs fn over items with at most `limit` in flight; stops on first error. */
+async function forEachLimited<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const index = next++;
+      try {
+        await fn(items[index], index);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, worker)
+  );
+}
+
 const TEMPLATE_MILESTONES_QUERY =
   "templateMilestones { id key title description scope actionCardType reviewStage statusTarget logEventName position showInFeedbackCenter isActive formDefinition { id } canReview { id } }";
 
@@ -122,8 +152,31 @@ async function copyProposalBoard(
   const template = await context.query.ProposalBoard.findOne({
     where: { id: id },
     query:
-      `id publicId slug title description isTemplate settings resources { id } templateForClasses { id } templatesForClass { id } ${TEMPLATE_MILESTONES_QUERY} sections { id publicId title position cards { id publicId type shareType title description settings position content comment resources { id } assignments { id title content placeholder settings public isTemplate tags { id } } studies { id } tasks { id } milestone { id } } }`,
+      `id publicId slug title description isTemplate settings resources { id } templateForClasses { id } templatesForClass { id } ${TEMPLATE_MILESTONES_QUERY} sections { id publicId title position cards { id publicId type shareType title description settings position content comment resources { id } studies { id } tasks { id } milestone { id } } }`,
   });
+
+  // The template cards' assignments, read as the caller in one query: the
+  // assignment access filter is expensive, and selecting `assignments` on each
+  // card ran it once per card (48 times for a 48-card board). Same rows, same
+  // access check, just batched.
+  if (template?.sections?.length) {
+    const linkedAssignments = await context.query.Assignment.findMany({
+      where: {
+        proposalCards: {
+          some: { section: { board: { id: { equals: id } } } },
+        },
+      },
+      query:
+        "id title content placeholder settings public isTemplate tags { id } proposalCards { id }",
+    });
+    for (const section of template.sections) {
+      for (const card of section.cards || []) {
+        card.assignments = linkedAssignments
+          .filter((a: any) => a.proposalCards?.some((pc: any) => pc.id === card.id))
+          .map(({ proposalCards, ...a }: any) => a);
+      }
+    }
+  }
 
   let boardSettings = template.settings;
   if (classIdTemplate) {
@@ -253,8 +306,10 @@ async function copyProposalBoard(
     : new Map<string, string>();
 
   // create new sections
-  await Promise.all(
-    template.sections.map(async (section: any, i: number) => {
+  await forEachLimited(
+    template.sections || [],
+    1,
+    async (section: any, i: number) => {
       const templateSection = template.sections[i];
       const newSection = await context.db.ProposalSection.createOne(
         {
@@ -274,8 +329,10 @@ async function copyProposalBoard(
       // - Global milestones are always reused by id.
       // - Independent copies remap template-scope ids to the clones created above.
       // - Student boards keep the source template's milestone ids (resolve via clonedFrom).
-      await Promise.all(
-        templateSection.cards.map(async (card: any, i: number) => {
+      await forEachLimited(
+        templateSection.cards || [],
+        CARD_CONCURRENCY,
+        async (card: any, i: number) => {
           const templateCard = section.cards[i];
           const sourceMilestoneId = templateCard.milestone?.id;
           const connectMilestoneId =
@@ -345,6 +402,12 @@ async function copyProposalBoard(
           // (classIdTemplate is provided, template.templateForClasses is empty),
           // any new assignments should be associated with that class so they
           // immediately appear in the class assignment context.
+          // The assignment writes below run as sudo (approved by the project
+          // owner, 2026-10-06). Every assignment id here came from `template`,
+          // which was read as the caller, so it is one the caller may read.
+          // Re-checking each id via connect ran the expensive assignment
+          // access filter once per link and timed out copies of large boards.
+          // sudo keeps the session, so author hooks still credit the caller.
           if (templateCard.assignments?.length > 0) {
             // Check if the template board is a class template (has templateForClasses set)
             const isClassTemplate =
@@ -353,7 +416,7 @@ async function copyProposalBoard(
             
             if (isClassTemplate) {
               // Student copying from teacher's template: reuse the same assignment IDs
-              await context.db.ProposalCard.updateOne({
+              await context.sudo().db.ProposalCard.updateOne({
                 where: { id: newCard.id },
                 data: {
                   assignments: {
@@ -365,9 +428,11 @@ async function copyProposalBoard(
               // Teacher copying from platform template: create new assignments.
               // If this copy is being used as a class template (classIdTemplate),
               // also associate the new assignments with that class.
-              await Promise.all(
-                templateCard.assignments.map(async (a: any) => {
-                  await context.db.Assignment.createOne(
+              await forEachLimited(
+                templateCard.assignments,
+                1,
+                async (a: any) => {
+                  await context.sudo().db.Assignment.createOne(
                     {
                       data: {
                         title: a.title,
@@ -395,13 +460,13 @@ async function copyProposalBoard(
                     },
                     "id"
                   );
-                })
+                }
               );
             }
           }
-        })
+        }
       );
-    })
+    }
   );
 
   // If this copy is being used as a class template (classIdTemplate),
@@ -423,16 +488,14 @@ async function copyProposalBoard(
 
     if (resourceIdsSet.size > 0) {
       const resourceIds = Array.from(resourceIdsSet);
-      await Promise.all(
-        resourceIds.map((resourceId) =>
-          context.db.Resource.updateOne({
-            where: { id: resourceId },
-            data: {
-              classes: { connect: [{ id: classIdTemplate }] },
-            },
-          })
-        )
-      );
+      await forEachLimited(resourceIds, CARD_CONCURRENCY, async (resourceId) => {
+        await context.db.Resource.updateOne({
+          where: { id: resourceId },
+          data: {
+            classes: { connect: [{ id: classIdTemplate }] },
+          },
+        });
+      });
     }
   }
 

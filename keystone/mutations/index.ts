@@ -41,6 +41,13 @@ import {
 import { opportunityMultiselectResolvers } from "../lib/opportunityMultiselectResolvers";
 import followUser from "./followUser";
 import unfollowUser from "./unfollowUser";
+import joinClass from "./joinClass";
+import toggleReviewUpvote from "./toggleReviewUpvote";
+import classJoinPreview from "./classJoinPreview";
+import {
+  recordStudyConditions,
+  updateGuestStudiesInfo,
+} from "./participantRun";
 import markOpportunityReviewNotesRead from "./markOpportunityReviewNotesRead";
 import recordOpportunityPreviewVisit from "./recordOpportunityPreviewVisit";
 import toggleFavoriteOpportunity from "./toggleFavoriteOpportunity";
@@ -177,7 +184,13 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         ): ProposalBoard
         deleteProposal(id: ID!): ProposalBoard
         archiveStudy(study: ID!, isArchived: Boolean!): Profile
-        googleSignup(token: String!, role: String, classCode: String): Profile
+        # invitationCode: the class's mentor invitation code (mentors only).
+        googleSignup(
+          token: String!
+          role: String
+          classCode: String
+          invitationCode: String
+        ): Profile
         googleLogin(token: String!): Profile
         # Public signup. Gated by Cloudflare Turnstile + bot heuristics;
         # Profile.create is closed to anonymous callers so this is the only
@@ -188,6 +201,7 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
           password: String!
           role: String
           classCode: String
+          invitationCode: String
           info: JSON
           turnstileToken: String
         ): Profile
@@ -265,6 +279,20 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         cancelNetworkInvite(inviteId: ID!): NetworkInvite
         followUser(userId: ID!): Friendship
         unfollowUser(userId: ID!): Boolean
+        # Upvote (true) or un-upvote (false) a review as the session user.
+        toggleReviewUpvote(reviewId: ID!, upvote: Boolean!): Review
+        # Participant run writes (guests and signed-in participants).
+        # Increments Study.components condition counters.
+        recordStudyConditions(studyId: ID!, conditionLabels: [String!]!): Boolean
+        # Saves a guest's studiesInfo, identified by the guest publicId.
+        updateGuestStudiesInfo(publicId: String!, studiesInfo: JSON!): Guest
+        # Join a class by code as "student" or "mentor"; grants the matching role.
+        # Mentors must also pass the class's mentor invitation code.
+        joinClass(
+          classCode: String!
+          role: String!
+          invitationCode: String
+        ): Profile
         # Connect the session user to OpportunityReviewNote.readBy for
         # notes they can see. Needed because list update is author-only.
         markOpportunityReviewNotesRead(noteIds: [ID!]!): [OpportunityReviewNote!]!
@@ -436,6 +464,13 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         isActive: Boolean
         position: Int
       }
+      # Public preview of a class for the join-by-code page.
+      type ClassJoinPreview {
+        id: ID!
+        code: String
+        title: String
+        creatorUsername: String
+      }
       type NetworkInviteContextNetwork {
         id: ID!
         publicId: String
@@ -504,6 +539,8 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         # Public-safe invite context for login/signup. Returns only
         # non-sensitive display fields for a tokenized NetworkInvite.
         networkInviteContext(token: String!): NetworkInviteContext
+        # Title and teacher of a class, by join code. Public; no roster.
+        classJoinPreview(code: String!): ClassJoinPreview
         # Connect Bank people search. Case-insensitive on Postgres via
         # Prisma mode; plain contains on local SQLite (ASCII CI).
         searchConnectUsers(
@@ -551,6 +588,7 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         resolveFormDefinition,
         resolveMilestonesForBoard,
         networkInviteContext,
+        classJoinPreview,
         searchConnectUsers,
         searchConnectUsersCount,
       },
@@ -594,6 +632,10 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         cancelNetworkInvite,
         followUser,
         unfollowUser,
+        joinClass,
+        recordStudyConditions,
+        updateGuestStudiesInfo,
+        toggleReviewUpvote,
         markOpportunityReviewNotesRead,
         recordOpportunityPreviewVisit,
         toggleFavoriteOpportunity,

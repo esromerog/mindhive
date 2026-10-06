@@ -10,13 +10,20 @@ import {
   json,
 } from "@keystone-6/core/fields";
 
+import {
+  signedInWrites,
+  journalQueryFilter,
+  journalOwnerFilter,
+} from "../access";
+
 export const Journal = list({
   access: {
-    operation: {
-      query: () => true,
-      create: () => true,
-      update: () => true,
-      delete: () => true,
+    // Owner reads and writes; staff of the owner's classes may read.
+    operation: signedInWrites,
+    filter: {
+      query: journalQueryFilter,
+      update: journalOwnerFilter,
+      delete: journalOwnerFilter,
     },
   },
   fields: {

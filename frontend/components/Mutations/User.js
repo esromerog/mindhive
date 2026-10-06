@@ -12,6 +12,7 @@ export const SIGNUP_MUTATION = gql`
     $password: String!
     $role: String
     $classCode: String
+    $invitationCode: String
     $info: JSON
     $turnstileToken: String
   ) {
@@ -21,6 +22,7 @@ export const SIGNUP_MUTATION = gql`
       password: $password
       role: $role
       classCode: $classCode
+      invitationCode: $invitationCode
       info: $info
       turnstileToken: $turnstileToken
     ) {
@@ -122,30 +124,19 @@ export const JOIN_STUDY_MUTATION = gql`
   }
 `;
 
-// join the class as a student
-export const JOIN_CLASS_AS_STUDENT_MUTATION = gql`
-  mutation JOIN_CLASS_AS_STUDENT_MUTATION($id: ID!, $classCode: String!) {
-    updateProfile(
-      where: { id: $id }
-      data: {
-        permissions: { connect: { name: "STUDENT" } }
-        studentIn: { connect: { code: $classCode } }
-      }
-    ) {
-      id
-    }
-  }
-`;
-
-// join the class as a mentor
-export const JOIN_CLASS_AS_MENTOR_MUTATION = gql`
-  mutation JOIN_CLASS_AS_MENTOR_MUTATION($id: ID!, $classCode: String!) {
-    updateProfile(
-      where: { id: $id }
-      data: {
-        permissions: { connect: { name: "MENTOR" } }
-        mentorIn: { connect: { code: $classCode } }
-      }
+// join a class by code as a student or mentor (grants the matching role
+// server-side; Profile.permissions is not writable from the client).
+// Mentors also pass the class's mentor invitation code.
+export const JOIN_CLASS_MUTATION = gql`
+  mutation JOIN_CLASS_MUTATION(
+    $classCode: String!
+    $role: String!
+    $invitationCode: String
+  ) {
+    joinClass(
+      classCode: $classCode
+      role: $role
+      invitationCode: $invitationCode
     ) {
       id
     }
