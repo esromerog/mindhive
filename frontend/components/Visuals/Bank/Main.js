@@ -30,9 +30,11 @@ const TITLE_STYLE = {
   color: "var(--MH-Theme-Neutrals-Black, #171717)",
 };
 
+// Fixed tracks like the Connect browse grid (ConnectCard caps at 368px), a
+// touch wider since a visual card carries a sketch cover.
 const GRID_STYLE = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 384px), 384px))",
   gap: 16,
 };
 

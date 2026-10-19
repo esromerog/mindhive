@@ -46,6 +46,7 @@ import ParameterBus from "../Runtime/parameterBus";
 import useVisualDataSources from "../Runtime/useVisualDataSources";
 
 import TopBar from "./TopBar";
+import NavMenu from "./NavMenu";
 import Preview from "./Preview";
 import ShareModal from "./ShareModal";
 import DocumentationPanel from "./Panels/Documentation";
@@ -63,6 +64,57 @@ const TABS = [
   { id: "parameters", label: "Parameters", icon: <TuneIcon /> },
   { id: "code", label: "Code", icon: <CodeIcon /> },
   { id: "settings", label: "Settings", icon: <SettingsIcon /> },
+];
+
+// The same panels as TABS, laid out for the vertical menu: grouped, in the
+// order an author works through them, each with a line on what it is for.
+const NAV_GROUPS = [
+  {
+    id: "visualSettings",
+    label: "Visual Settings",
+    items: [
+      {
+        id: "parameters",
+        label: "Parameters",
+        description:
+          "Control the visual with your data.",
+        icon: <TuneIcon />,
+      },
+      {
+        id: "code",
+        label: "Code",
+        description: "Edit the code from scratch or import other examples.",
+        icon: <CodeIcon />,
+      },
+      {
+        id: "documentation",
+        label: "Documentation",
+        description:
+          "Read the default tutorials, take notes, or create your own guides.",
+        icon: <DescriptionIcon />,
+      },
+      {
+        id: "settings",
+        label: "Settings",
+        description: "Change the name, description, or sharing settings.",
+        icon: <SettingsIcon />,
+      },
+    ],
+  },
+  {
+    id: "inputs",
+    label: "Inputs",
+    items: [
+      {
+        id: "dataSource",
+        labelKey: "dataSources",
+        label: "Data Sources",
+        description:
+          "Connect to various devices and map your parameters to realtime data.",
+        icon: <WaveformIcon />,
+      },
+    ],
+  },
 ];
 
 // Viewport units rather than 100%: nothing between here and <body> carries a
@@ -95,6 +147,14 @@ const BODY_STYLE = {
   padding: "0 16px 16px",
   boxSizing: "border-box",
 };
+
+// Without the Navbar above, the body opens the channel under the top bar
+// itself: 8px on top of the top bar's own 8, to match the 16px sides.
+const VERTICAL_BODY_STYLE = { ...BODY_STYLE, paddingTop: 8 };
+
+// SplitPane's gutter, so the menu sits as far from the work panel as the work
+// panel does from the preview.
+const NAV_MENU_GAP = 12;
 
 // Wide enough for the 24px chevron with the panel's own 12px of breathing room
 // either side. No gap of its own: the split's divider stays where it was when
@@ -212,6 +272,10 @@ export default function VisualBuilder({ query, user }) {
       !!visual?.collaborators?.some((c) => c.id === user.id));
 
   const [tab, setTab] = useState("parameters");
+  // Vertical menu by default while the two layouts are being compared;
+  // `?nav=tabs` brings back the horizontal Navbar.
+  const verticalNav = query?.nav !== "tabs";
+  const [menuOpen, setMenuOpen] = useState(true);
   const [detailPanel, setDetailPanel] = useState(null);
   const [focusFileId, setFocusFileId] = useState(null);
   const [previewVisible, setPreviewVisible] = useState(true);
@@ -728,21 +792,36 @@ export default function VisualBuilder({ query, user }) {
           }}
         />
 
-        <Navbar style={NAVBAR_STYLE}>
-          {TABS.map((entry) => (
-            <NavbarItem
-              key={entry.id}
-              leadingIcon={entry.icon}
-              selected={tab === entry.id}
-              onClick={() => leaveUnlessDirty(() => setTab(entry.id))}
-            >
-              {t(entry.id, entry.label)}
-            </NavbarItem>
-          ))}
-        </Navbar>
+        {verticalNav ? null : (
+          <Navbar style={NAVBAR_STYLE}>
+            {TABS.map((entry) => (
+              <NavbarItem
+                key={entry.id}
+                leadingIcon={entry.icon}
+                selected={tab === entry.id}
+                onClick={() => leaveUnlessDirty(() => setTab(entry.id))}
+              >
+                {t(entry.id, entry.label)}
+              </NavbarItem>
+            ))}
+          </Navbar>
+        )}
 
-        <div style={BODY_STYLE}>
+        <div style={verticalNav ? VERTICAL_BODY_STYLE : BODY_STYLE}>
           <style dangerouslySetInnerHTML={{ __html: RAIL_HOVER_STYLE }} />
+
+          {/* The margin is the split's gutter: menu, work and preview sit
+              equally apart, three panels in a row. */}
+          {verticalNav ? (
+            <NavMenu
+              groups={NAV_GROUPS}
+              selected={tab}
+              collapsed={!menuOpen}
+              onSelect={(id) => leaveUnlessDirty(() => setTab(id))}
+              onToggle={() => setMenuOpen((open) => !open)}
+              style={{ marginRight: NAV_MENU_GAP }}
+            />
+          ) : null}
           <SplitPane
             style={{ flex: "1 1 0%", minWidth: 0 }}
             collapsed={!previewVisible}
