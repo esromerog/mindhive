@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   cameraChoices,
+  connectReceiver,
   createReceiver,
   describeReceiver,
   needsVideoElement,
@@ -156,8 +157,7 @@ export default function useSourceRuntime(row) {
           videoElement,
           deviceId: cameraIdsRef.current[inputId],
         });
-        await receiver.connect();
-        await receiver.startStream?.();
+        await connectReceiver(input.receiver, receiver);
         receiversRef.current[inputId] = receiver;
         if (camera) camerasRef.current[inputId] = camera;
         // Keyed by the input's own id, not its receiver type — two inputs of

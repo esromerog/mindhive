@@ -5,7 +5,14 @@
 // Receiver types that read pixels off a shared <video> element rather than
 // owning a connection of their own — useSourceRuntime mounts a hidden video
 // element for these before calling createReceiver.
-const CAMERA_RECEIVER_TYPES = new Set(["video", "face_landmark", "face_emotion"]);
+const CAMERA_RECEIVER_TYPES = new Set([
+  "video",
+  "face_landmark",
+  "face_landmark_pair",
+  "face_emotion",
+  "pose",
+  "rppg",
+]);
 
 export function needsVideoElement(receiverType) {
   return CAMERA_RECEIVER_TYPES.has(receiverType);
@@ -29,6 +36,7 @@ async function openCamera(yq, videoElement, deviceId) {
 // createReceiver), so a receiver with no entry here asks for none.
 const OVERLAY_LAYERS = {
   face_landmark: { box: false, landmarks: false, connections: "mesh" },
+  face_landmark_pair: { box: false, landmarks: false, connections: "contours" },
   face_emotion: { box: true, label: true, landmarks: false, connections: "contours" },
 };
 
@@ -82,6 +90,30 @@ export async function createReceiver(receiverType, { videoElement, deviceId } = 
         camera,
       };
     }
+    // Two people in one frame, each on their own blendshape stream
+    // (blendshapes_face_1 / _face_2) — what a face synchrony graph reads.
+    case "face_landmark_pair": {
+      if (!videoElement) {
+        throw new Error("A camera input needs a video element to connect to.");
+      }
+      const camera = await openCamera(yq, videoElement, deviceId);
+      return {
+        receiver: new yq.FaceLandmarkReceiver(videoElement, {
+          numFaces: 2,
+          emitLandmarks: true,
+        }),
+        camera,
+      };
+    }
+    case "pose":
+    case "rppg": {
+      if (!videoElement) {
+        throw new Error("A camera input needs a video element to connect to.");
+      }
+      const camera = await openCamera(yq, videoElement, deviceId);
+      const Receiver = receiverType === "pose" ? yq.PoseReceiver : yq.RPPGReceiver;
+      return { receiver: new Receiver(videoElement), camera };
+    }
     case "face_emotion": {
       if (!videoElement) {
         throw new Error("A camera input needs a video element to connect to.");
@@ -98,6 +130,10 @@ export async function createReceiver(receiverType, { videoElement, deviceId } = 
     case "audio":
     case "microphone":
       return { receiver: new yq.MicrophoneReceiver() };
+    // Emits per phrase, not per interval — nothing arrives while nobody speaks.
+    // `emitAffect` adds the valence/arousal stream the old YQ device had.
+    case "voice_emotion":
+      return { receiver: new yq.VoiceEmotionReceiver({ emitAffect: true }) };
     case "lsl":
       return { receiver: new yq.LSLReceiver() };
     case "marker":
@@ -105,6 +141,18 @@ export async function createReceiver(receiverType, { videoElement, deviceId } = 
     default:
       throw new Error(`No receiver is registered for "${receiverType}" yet.`);
   }
+}
+
+// Receivers disagree about what `connect` takes: EMOTIV must be told which
+// Cortex streams to subscribe to (raw EEG and motion; band power is derived by
+// the graph, as for Muse), the rest take nothing.
+export async function connectReceiver(receiverType, receiver) {
+  if (receiverType === "emotiv") {
+    await receiver.connect(["eeg", "mot"]);
+  } else {
+    await receiver.connect();
+  }
+  await receiver.startStream?.();
 }
 
 // The camera track a camera-backed input is reading: held by the receiver

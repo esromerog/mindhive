@@ -46,9 +46,16 @@ export default function CameraCanvas({ videoElement, receiver, layers }) {
 
     import("yq-data").then(({ FaceOverlay }) => {
       if (cancelled) return;
-      // "fill" because the canvas below is stretched over the same frame, so a
-      // normalized point lands where it does on the picture.
-      const overlay = new FaceOverlay(canvas, { fit: "fill", layers });
+      // "cover" to match the object-fit of the canvas below, and the video so the
+      // overlay knows the frame's size and can place points inside the crop.
+      // Translucent so a dense mesh doesn't bury the face; the head-pose axes are
+      // off because they are clutter on a preview.
+      const overlay = new FaceOverlay(canvas, {
+        video: videoElement,
+        fit: "cover",
+        layers: { headPose: false, ...layers },
+        style: { color: "rgba(255, 255, 255, 0.35)" },
+      });
       const detach = overlay.attach(receiver);
       overlay.start();
       stop = () => {
@@ -61,11 +68,14 @@ export default function CameraCanvas({ videoElement, receiver, layers }) {
       cancelled = true;
       stop?.();
     };
-  }, [receiver, layers]);
+  }, [receiver, layers, videoElement]);
 
   return (
     <div style={{ position: "relative", aspectRatio: "16 / 9", borderRadius: 4, overflow: "hidden", background: "#000" }}>
-      <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+      <canvas
+        ref={canvasRef}
+        style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }}
+      />
       <canvas
         ref={overlayRef}
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
