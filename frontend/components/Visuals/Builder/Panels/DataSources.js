@@ -303,7 +303,9 @@ function DataSourceBlock({ source, api, canEdit, onRemove, onSettings }) {
                 status={api?.inputStatus[input.id]}
                 onConnect={api?.connect}
                 onDisconnect={api?.disconnect}
+                onSelectCamera={api?.selectCamera}
                 videoElement={api?.getVideoElement(input.id)}
+                receiver={api?.getReceiver(input.id)}
               />
             ))}
           </BlockSection>

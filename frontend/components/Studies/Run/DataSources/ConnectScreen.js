@@ -5,6 +5,8 @@ import Chip from "../../../DesignSystem/Chip";
 import { WaveformIcon, PlugIcon } from "../../../DesignSystem/Icons";
 import { channelKey } from "../../../../lib/yqOutputs";
 import CameraCanvas from "./CameraCanvas";
+import CameraSelect from "./CameraSelect";
+import { overlayLayers } from "./receivers";
 
 const PAGE_STYLE = {
   minHeight: "100vh",
@@ -84,8 +86,21 @@ export function StatusIndicator({ streaming }) {
  * @param {boolean} [nested=false] - The row sits on a Light-Green card (the
  *   visual builder's) rather than a white one, so it takes the grey surface
  *   instead to stay visible.
+ * @param {object} [receiver] - The live receiver behind the camera, whose face
+ *   geometry is drawn over the feed.
+ * @param {(inputId: string, deviceId: string) => void} [onSelectCamera] - Lets
+ *   the camera be switched from the dropdown under the feed.
  */
-export function InputRow({ input, status, onConnect, onDisconnect, videoElement, nested = false }) {
+export function InputRow({
+  input,
+  status,
+  onConnect,
+  onDisconnect,
+  videoElement,
+  receiver,
+  onSelectCamera,
+  nested = false,
+}) {
   const connected = status?.status === "connected";
   const connecting = status?.status === "connecting";
   const showCamera = connected && !!videoElement;
@@ -135,11 +150,16 @@ export function InputRow({ input, status, onConnect, onDisconnect, videoElement,
       {showCamera && (
         <>
           <div style={{ borderRadius: 12, overflow: "hidden" }}>
-            <CameraCanvas videoElement={videoElement} />
+            <CameraCanvas
+              videoElement={videoElement}
+              receiver={receiver}
+              layers={overlayLayers(input.receiver)}
+            />
           </div>
-          {status.deviceLabel && (
-            <Chip variant="static" tone="neutral" label={status.deviceLabel} style={{ alignSelf: "flex-start" }} />
-          )}
+          <CameraSelect
+            status={status}
+            onSelect={onSelectCamera && ((deviceId) => onSelectCamera(input.id, deviceId))}
+          />
         </>
       )}
     </div>

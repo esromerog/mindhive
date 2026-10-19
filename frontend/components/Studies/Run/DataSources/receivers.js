@@ -17,11 +17,23 @@ export function needsVideoElement(receiverType) {
 // This opens one per vision input rather than sharing a single camera across
 // a block's inputs, at the cost of one extra getUserMedia prompt when a block
 // declares more than one vision input on the same camera.
-async function openCamera(yq, videoElement) {
-  const camera = new yq.VideoReceiver(videoElement);
+async function openCamera(yq, videoElement, deviceId) {
+  const camera = new yq.VideoReceiver(videoElement, deviceId ? { deviceId } : undefined);
   await camera.connect();
   await camera.startStream();
   return camera;
+}
+
+// What yq-data's FaceOverlay draws on the preview for each camera-backed
+// receiver. The geometry it reads is only emitted when asked for (see
+// createReceiver), so a receiver with no entry here asks for none.
+const OVERLAY_LAYERS = {
+  face_landmark: { box: false, landmarks: false, connections: "mesh" },
+  face_emotion: { box: true, label: true, landmarks: false, connections: "contours" },
+};
+
+export function overlayLayers(receiverType) {
+  return OVERLAY_LAYERS[receiverType] || null;
 }
 
 // Cortex client credentials identify the MindHive app to EMOTIV, not the
@@ -39,11 +51,14 @@ function emotivCredentials() {
   return { clientId, clientSecret };
 }
 
+// `deviceId` picks a specific camera for the camera-backed receivers; without
+// one the browser's default is used.
+//
 // Returns { receiver, camera }. `receiver` is what the caller connects,
 // starts and attaches to the pipeline; `camera` is only set for vision
 // receivers that needed a VideoReceiver opened underneath them first — the
 // caller keeps it only to disconnect it later, it never joins the pipeline.
-export async function createReceiver(receiverType, { videoElement } = {}) {
+export async function createReceiver(receiverType, { videoElement, deviceId } = {}) {
   const yq = await import("yq-data");
   switch (receiverType) {
     case "muse":
@@ -54,20 +69,31 @@ export async function createReceiver(receiverType, { videoElement } = {}) {
       if (!videoElement) {
         throw new Error("A camera input needs a video element to connect to.");
       }
-      return { receiver: new yq.VideoReceiver(videoElement) };
+      return { receiver: new yq.VideoReceiver(videoElement, deviceId ? { deviceId } : undefined) };
     case "face_landmark": {
       if (!videoElement) {
         throw new Error("A camera input needs a video element to connect to.");
       }
-      const camera = await openCamera(yq, videoElement);
-      return { receiver: new yq.FaceLandmarkReceiver(videoElement), camera };
+      const camera = await openCamera(yq, videoElement, deviceId);
+      // The landmarks only feed the preview overlay; the graph records nodes
+      // by declared output (see yqAggregateRecorder), so they are never saved.
+      return {
+        receiver: new yq.FaceLandmarkReceiver(videoElement, { emitLandmarks: true }),
+        camera,
+      };
     }
     case "face_emotion": {
       if (!videoElement) {
         throw new Error("A camera input needs a video element to connect to.");
       }
-      const camera = await openCamera(yq, videoElement);
-      return { receiver: new yq.FaceEmotionReceiver(videoElement), camera };
+      const camera = await openCamera(yq, videoElement, deviceId);
+      return {
+        receiver: new yq.FaceEmotionReceiver(videoElement, {
+          emitFaceBox: true,
+          emitLandmarks: true,
+        }),
+        camera,
+      };
     }
     case "audio":
     case "microphone":
@@ -81,15 +107,33 @@ export async function createReceiver(receiverType, { videoElement } = {}) {
   }
 }
 
+// The camera track a camera-backed input is reading: held by the receiver
+// itself for "video", by the VideoReceiver under it for the vision receivers.
+function cameraTrack(receiver, camera) {
+  return (camera?.videoStream ?? receiver?.videoStream)?.getVideoTracks?.()[0];
+}
+
 // A friendly device label for the connected-state subtitle ("Muse F1DH",
 // "MacBook Pro Camera"), read off whatever the receiver ended up connected to.
-export function describeReceiver(receiver, receiverType) {
-  if (receiverType === "video") {
-    const track = receiver?.videoStream?.getVideoTracks?.()[0];
-    return track?.label || "Camera";
+export function describeReceiver(receiver, receiverType, camera) {
+  if (needsVideoElement(receiverType)) {
+    return cameraTrack(receiver, camera)?.label || "Camera";
   }
   if (!receiver?.deviceName) return null;
   return receiver?.deviceID
     ? `${receiver.deviceName} ${receiver.deviceID}`
     : receiver.deviceName;
+}
+
+// The cameras the browser offers and which one this input is on, for the
+// preview's picker. Labels are only filled in once camera permission has been
+// granted, which connecting has just done.
+export async function cameraChoices(receiver, camera) {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return {
+    cameraId: cameraTrack(receiver, camera)?.getSettings?.().deviceId,
+    cameras: devices
+      .filter((device) => device.kind === "videoinput")
+      .map((device) => ({ id: device.deviceId, label: device.label || "Camera" })),
+  };
 }
