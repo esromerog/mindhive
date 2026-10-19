@@ -9,6 +9,7 @@ import Chip from "../../../DesignSystem/Chip";
 import DropdownSelect from "../../../DesignSystem/DropdownSelect";
 import IconButton from "../../../DesignSystem/IconButton";
 import Input from "../../../DesignSystem/Input";
+import MessageCard from "../../../DesignSystem/MessageCard";
 import {
   ArrowDropDownIcon,
   CableIcon,
@@ -569,7 +570,7 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
           </footer>
         </>
       ) : (
-        <div style={BODY_STYLE}>
+        <div style={{ ...BODY_STYLE, paddingTop: 16 }}>
           <h3 style={SECTION_TITLE_STYLE}>
             {t("availableStreams", "Available Streams")}
           </h3>
@@ -613,17 +614,20 @@ function StreamPicker({
 
   if (!isStreamMappable(declaration, binding)) {
     return (
-      <div style={STREAMS_BOX_STYLE}>
-        {binding.allowMapping === false
-          ? t(
-              "mappingTurnedOff",
-              "Mapping is turned off for this parameter. Turn on Allow Mapping in its settings to connect it to a device."
-            )
-          : t(
-              "onlyNumbersMap",
-              "Only number parameters can be mapped to a device output for now. Set this one by hand from its controls."
-            )}
-      </div>
+      <MessageCard
+        variant="information"
+        message={
+          binding.allowMapping === false
+            ? t(
+                "mappingTurnedOff",
+                "Mapping is turned off for this parameter. Turn on Allow Mapping in its settings to connect it to a device."
+              )
+            : t(
+                "onlyNumbersMap",
+                "Only number parameters can be mapped to a device output for now."
+              )
+        }
+      />
     );
   }
 

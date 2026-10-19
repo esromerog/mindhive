@@ -129,6 +129,12 @@ const FOOTER_STYLE = {
 // stop being a summary and start being a wall.
 const OUTPUTS_SHOWN = 20;
 
+// The output whose mapping is open: a grey fill, apart from the tertiary one a
+// mapped output wears. Fill only, so its edge is the chip's own.
+const OPEN_CHIP_STYLE = {
+  background: "var(--MH-Theme-Neutrals-Light, #e6e6e6)",
+};
+
 /**
  * The Data Source tab: the sources linked into this visual, each one live.
  *
@@ -261,12 +267,13 @@ function BlockSection({ title, actions = null, children }) {
  * it streams, and — for an editor — Remove and Settings.
  *
  * An output chip opens that output's mapping in the detail panel, and is
- * selected (Tertiary) while at least one parameter reads it. Whether the source
+ * selected (Tertiary) while at least one parameter reads it, and grey while its
+ * mapping is the one open, so the chip you clicked answers. Whether the source
  * is streaming is the status indicator's to say, not the chips'.
  */
 function DataSourceBlock({ source, api, canEdit, onRemove, onSettings }) {
   const { t } = useTranslation("visuals");
-  const { bindings, openPanel } = useVisualBuilder();
+  const { bindings, openPanel, detailStream } = useVisualBuilder();
   const [showAll, setShowAll] = useState(false);
   const { block } = source;
   const streaming = !!api?.streaming;
@@ -290,6 +297,10 @@ function DataSourceBlock({ source, api, canEdit, onRemove, onSettings }) {
         binding.mapping.output === outputKey(output) &&
         binding.mapping.channel === channel.index
     );
+  const isOpen = (output, channel) =>
+    detailStream?.sourceId === source.id &&
+    detailStream.output === outputKey(output) &&
+    detailStream.channel === channel.index;
   const shown = showAll ? channels : channels.slice(0, OUTPUTS_SHOWN);
 
   return (
@@ -341,7 +352,8 @@ function DataSourceBlock({ source, api, canEdit, onRemove, onSettings }) {
                   <Chip
                     key={key}
                     label={channel.label}
-                    selected={isMapped(output, channel)}
+                    selected={isMapped(output, channel) && !isOpen(output, channel)}
+                    style={isOpen(output, channel) ? OPEN_CHIP_STYLE : undefined}
                     accent="tertiary"
                     onClick={() =>
                       openPanel({

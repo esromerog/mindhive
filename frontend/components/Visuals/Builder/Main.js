@@ -654,6 +654,7 @@ export default function VisualBuilder({ query, user }) {
       // can show itself as the selected one.
       detailKey: detailPanel?.paramKey ?? null,
       detailSourceId: detailPanel?.sourceId ?? null,
+      detailStream: detailPanel?.stream ?? null,
       revealFile,
       focusFileId,
       logs,

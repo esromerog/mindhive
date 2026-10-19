@@ -20,6 +20,18 @@ export const MY_VISUALS = gql`
       author {
         id
         username
+        firstName
+        lastName
+        image {
+          id
+          keystoneImage {
+            id
+            url
+          }
+          image {
+            publicUrlTransformed
+          }
+        }
       }
       collaborators {
         id
@@ -28,6 +40,9 @@ export const MY_VISUALS = gql`
       viewers {
         id
         username
+      }
+      likes {
+        id
       }
     }
   }

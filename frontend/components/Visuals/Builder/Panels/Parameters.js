@@ -445,7 +445,7 @@ function AddParameterModal({ open, keys, onAdd, onClose }) {
 }
 
 /** One line of the panel talking about itself, in the panel's own hue. */
-function Notice({ children }) {
+export function Notice({ children }) {
   return (
     <div style={BANNER_STYLE} role="status">
       <span style={{ flex: "1 1 auto", minWidth: 0 }}>{children}</span>
@@ -498,7 +498,7 @@ function NumberField({ value, step, onChange, ...rest }) {
  * only while its source is actually streaming — a mapping to a device nobody
  * has connected is not live, and shouldn't look it.
  */
-function MapChip({ binding, dataSources, sourceApis, onClick }) {
+export function MapChip({ binding, dataSources, sourceApis, onClick }) {
   const { t } = useTranslation("visuals");
   const mapping = binding.mapping;
 

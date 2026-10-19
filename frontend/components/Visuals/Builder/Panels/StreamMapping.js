@@ -4,8 +4,10 @@ import { useEffect } from "react";
 import useTranslation from "next-translate/useTranslation";
 
 import Panel from "../Panel";
+import Button from "../../../DesignSystem/Button";
 import Checkbox from "../../../DesignSystem/Checkbox";
 import IconButton from "../../../DesignSystem/IconButton";
+import MessageCard from "../../../DesignSystem/MessageCard";
 import { CloseIcon } from "../../../DesignSystem/Icons";
 
 import { useVisualBuilder } from "../../Context/VisualBuilderContext";
@@ -18,6 +20,7 @@ import {
 import {
   CARD_ACTIVE_STYLE,
   CARD_STYLE,
+  MapChip,
   NAME_BLOCK_STYLE,
   NAME_STYLE,
   ROW_STYLE,
@@ -40,20 +43,43 @@ const HELP_STYLE = {
 // The whole row toggles, not just the box, so the row is the click target.
 const CLICKABLE_ROW_STYLE = { cursor: "pointer" };
 
+// A row on another stream: its name goes quiet along with the checkbox.
+const LOCKED_NAME_STYLE = {
+  color: "var(--MH-Theme-Neutrals-Dark, #6A6A6A)",
+};
+
+// A row and the message attached under it, close enough to read as one item.
+const GROUP_STYLE = { display: "flex", flexDirection: "column", gap: 4 };
+
+const ROW_ACTIONS_STYLE = {
+  display: "flex",
+  alignItems: "center",
+  gap: 4,
+  flexShrink: 0,
+};
+
 /**
  * The other half of a parameter's Mapping tab: one output of a linked source,
  * and the parameters that read it.
  *
  * A parameter takes one stream but a stream can feed many parameters, so where
  * the parameter's panel is a choice of one, this is a checklist. Both write the
- * same `mapping` on the parameter's binding. Ticking a parameter that already
- * follows a different stream moves it here, the way picking a stream does from
- * the other side — its row says which stream it is leaving.
+ * same `mapping` on the parameter's binding. A parameter that already follows
+ * a different stream is locked: its row carries that stream's chip, and a
+ * message attached under it unmaps the parameter in place, after which it can
+ * be ticked here. Rows are listed mapped here, then free, then locked.
  */
 export default function StreamMappingPanel({ stream }) {
   const { t } = useTranslation("visuals");
-  const { canEdit, dataSources, declared, bindings, updateBinding, closePanel } =
-    useVisualBuilder();
+  const {
+    canEdit,
+    dataSources,
+    sourceApis,
+    declared,
+    bindings,
+    updateBinding,
+    closePanel,
+  } = useVisualBuilder();
 
   const source = dataSources.find((row) => row.id === stream.sourceId);
   const output = source?.block?.outputs?.find(
@@ -74,17 +100,15 @@ export default function StreamMappingPanel({ stream }) {
     mapping.output === stream.output &&
     mapping.channel === stream.channel;
 
-  // The label of whatever stream a mapping points at, for a row that is
-  // currently following a different one.
-  const streamLabel = (mapping) =>
-    dataSources
-      .find((row) => row.id === mapping.sourceId)
-      ?.block?.outputs?.find((entry) => outputKey(entry) === mapping.output)
-      ?.channels?.find((entry) => entry.index === mapping.channel)?.label;
-
-  const keys = Object.keys(declared || {}).filter((key) =>
-    isStreamMappable(declared[key], bindingFor(bindings, key))
-  );
+  // Mapped here first, then the free ones, then those held by another stream:
+  // what can be ticked stays above what has to be unmapped first.
+  const rank = (key) => {
+    const mapping = bindingFor(bindings, key).mapping;
+    return isThis(mapping) ? 0 : mapping?.kind === "stream" ? 2 : 1;
+  };
+  const keys = Object.keys(declared || {})
+    .filter((key) => isStreamMappable(declared[key], bindingFor(bindings, key)))
+    .sort((a, b) => rank(a) - rank(b));
 
   function toggle(key, mapped) {
     updateBinding(key, {
@@ -101,7 +125,7 @@ export default function StreamMappingPanel({ stream }) {
 
   return (
     <Panel
-      title={channel.label}
+      title={t("mapToParameter", "Map to parameter")}
       actions={
         <IconButton
           variant="text"
@@ -113,6 +137,7 @@ export default function StreamMappingPanel({ stream }) {
       }
     >
       <p style={HELP_STYLE}>
+        {channel.label} ·{" "}
         {t("fromSource", "From {{source}}").replace(
           "{{source}}",
           source.label || source.block?.title
@@ -135,39 +160,65 @@ export default function StreamMappingPanel({ stream }) {
           const declaration = declared[key];
           const mapping = bindingFor(bindings, key).mapping;
           const mapped = isThis(mapping);
-          const elsewhere =
-            mapping?.kind === "stream" && !mapped ? streamLabel(mapping) : null;
+          const elsewhere = mapping?.kind === "stream" && !mapped;
+          const clickable = canEdit && !elsewhere;
 
           return (
+            <div key={key} style={GROUP_STYLE}>
             <div
-              key={key}
               className="Visuals-StreamMappingRow"
               style={{
                 ...CARD_STYLE,
                 ...(mapped ? CARD_ACTIVE_STYLE : null),
-                ...(canEdit ? CLICKABLE_ROW_STYLE : null),
+                ...(clickable ? CLICKABLE_ROW_STYLE : null),
               }}
-              onClick={canEdit ? () => toggle(key, mapped) : undefined}
+              onClick={clickable ? () => toggle(key, mapped) : undefined}
             >
               <div style={ROW_STYLE}>
                 <div style={NAME_BLOCK_STYLE}>
-                  <p style={NAME_STYLE}>{labelFor(key, declaration)}</p>
-                  <p style={TYPE_STYLE}>
-                    {elsewhere
-                      ? t("mappedTo", "Mapped to {{stream}}").replace(
-                          "{{stream}}",
-                          elsewhere
-                        )
-                      : typeLabel(declaration)}
+                  <p style={{ ...NAME_STYLE, ...(elsewhere ? LOCKED_NAME_STYLE : null) }}>
+                    {labelFor(key, declaration)}
                   </p>
+                  <p style={TYPE_STYLE}>{typeLabel(declaration)}</p>
                 </div>
-                <Checkbox
-                  tone="accent"
-                  checked={mapped}
-                  disabled={!canEdit}
-                  ariaLabel={labelFor(key, declaration)}
-                />
+                <div style={ROW_ACTIONS_STYLE}>
+                  {elsewhere ? (
+                    <MapChip
+                      binding={bindingFor(bindings, key)}
+                      dataSources={dataSources}
+                      sourceApis={sourceApis || {}}
+                    />
+                  ) : null}
+                  <Checkbox
+                    tone="accent"
+                    checked={mapped}
+                    disabled={!clickable}
+                    ariaLabel={labelFor(key, declaration)}
+                  />
+                </div>
               </div>
+            </div>
+            {elsewhere ? (
+              <MessageCard
+                variant="information"
+                style={{ borderRadius: 12 }}
+                message={t(
+                  "alreadyMapped",
+                  "This parameter is already mapped to an output."
+                )}
+                action={
+                  canEdit ? (
+                    <Button
+                      variant="text"
+                      tone="accent"
+                      onClick={() => toggle(key, true)}
+                    >
+                      {t("unmap", "Unmap")}
+                    </Button>
+                  ) : undefined
+                }
+              />
+            ) : null}
             </div>
           );
         })

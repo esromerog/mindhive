@@ -2,6 +2,7 @@ import { mergeSchemas } from "@graphql-tools/schema";
 
 import sendEmail from "./sendEmail";
 import copyProposalBoard from "./copyProposalBoard";
+import copyVisual from "./copyVisual";
 import deleteProposal from "./deleteProposal";
 import archiveStudy from "./archiveStudy";
 import googleSignup from "./googleSignup";
@@ -182,6 +183,8 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
           collaborators: [ID]
           isTemplate: Boolean
         ): ProposalBoard
+        # "Copy & Edit": a private copy of a visual the caller can read.
+        copyVisual(id: ID!): Visual
         deleteProposal(id: ID!): ProposalBoard
         archiveStudy(study: ID!, isArchived: Boolean!): Profile
         # invitationCode: the class's mentor invitation code (mentors only).
@@ -599,6 +602,7 @@ export const extendGraphqlSchema = (schema: GraphQLSchema) =>
         saveStudyDataSourceRecord,
         sendEmail,
         copyProposalBoard,
+        copyVisual,
         deleteProposal,
         archiveStudy,
         googleSignup,

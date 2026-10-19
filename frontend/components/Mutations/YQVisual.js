@@ -42,6 +42,27 @@ export const DELETE_VISUAL = gql`
   }
 `;
 
+export const COPY_VISUAL = gql`
+  mutation COPY_VISUAL($id: ID!) {
+    copyVisual(id: $id) {
+      id
+    }
+  }
+`;
+
+// The star on a bank card. `likes` is the one field a non-collaborator may
+// write, and only to connect or disconnect themselves.
+export const TOGGLE_VISUAL_LIKE = gql`
+  mutation TOGGLE_VISUAL_LIKE($id: ID!, $likes: ProfileRelateToManyForUpdateInput!) {
+    updateVisual(where: { id: $id }, data: { likes: $likes }) {
+      id
+      likes {
+        id
+      }
+    }
+  }
+`;
+
 export const CREATE_VISUAL_CODE_FILE = gql`
   mutation CREATE_VISUAL_CODE_FILE($data: VisualCodeFileCreateInput!) {
     createVisualCodeFile(data: $data) {
