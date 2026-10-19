@@ -46,7 +46,7 @@ const BANNER_STYLE = {
   font: "var(--MH-Type-Body-Base)",
 };
 
-const CARD_STYLE = {
+export const CARD_STYLE = {
   boxSizing: "border-box",
   display: "flex",
   flexDirection: "column",
@@ -60,11 +60,11 @@ const CARD_STYLE = {
 
 // Selected and expanded look the same on purpose: both mean "this is the row
 // you are working on", and a row can be either without being the other.
-const CARD_ACTIVE_STYLE = {
+export const CARD_ACTIVE_STYLE = {
   background: "var(--MH-Theme-Neutrals-Light-Green, #F6F9F8)",
 };
 
-const ROW_STYLE = {
+export const ROW_STYLE = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
@@ -72,7 +72,7 @@ const ROW_STYLE = {
   padding: "12px 16px",
 };
 
-const NAME_BLOCK_STYLE = {
+export const NAME_BLOCK_STYLE = {
   display: "flex",
   flexDirection: "column",
   minWidth: 0,
@@ -80,7 +80,7 @@ const NAME_BLOCK_STYLE = {
 };
 
 // MH-Theme/title/base
-const NAME_STYLE = {
+export const NAME_STYLE = {
   margin: 0,
   font: "var(--MH-Type-Title-Base)",
   color: "var(--MH-Theme-Neutrals-Black, #171717)",
@@ -90,7 +90,7 @@ const NAME_STYLE = {
 };
 
 // MH-Theme/body/base
-const TYPE_STYLE = {
+export const TYPE_STYLE = {
   margin: 0,
   font: "var(--MH-Type-Body-Base)",
   color: "var(--MH-Theme-Neutrals-Dark, #6A6A6A)",

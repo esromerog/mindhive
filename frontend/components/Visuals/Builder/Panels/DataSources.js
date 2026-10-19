@@ -21,7 +21,7 @@ import {
   StatusIndicator,
 } from "../../../Studies/Run/DataSources/ConnectScreen";
 import { useVisualBuilder } from "../../Context/VisualBuilderContext";
-import { channelKey } from "../../../../lib/yqOutputs";
+import { channelKey, outputKey } from "../../../../lib/yqOutputs";
 
 const EMPTY_STYLE = {
   display: "flex",
@@ -178,7 +178,7 @@ export default function DataSourcesPanel() {
             {canEdit
               ? t(
                   "noDataSourcesBody",
-                  "Link a data source to connect a device, then map its outputs onto this visual's parameters from the Parameters tab."
+                  "Link a data source to connect a device, then map its outputs onto this visual's parameters from here or from the Parameters tab."
                 )
               : t(
                   "noDataSourcesViewer",
@@ -260,11 +260,13 @@ function BlockSection({ title, actions = null, children }) {
  * One linked source (Figma "Data Source Block"): its connect rows, the outputs
  * it streams, and — for an editor — Remove and Settings.
  *
- * Output chips light up in Tertiary while the source is streaming, so an author
- * can see at a glance which channels are there to map.
+ * An output chip opens that output's mapping in the detail panel, and is
+ * selected (Tertiary) while at least one parameter reads it. Whether the source
+ * is streaming is the status indicator's to say, not the chips'.
  */
 function DataSourceBlock({ source, api, canEdit, onRemove, onSettings }) {
   const { t } = useTranslation("visuals");
+  const { bindings, openPanel } = useVisualBuilder();
   const [showAll, setShowAll] = useState(false);
   const { block } = source;
   const streaming = !!api?.streaming;
@@ -272,9 +274,22 @@ function DataSourceBlock({ source, api, canEdit, onRemove, onSettings }) {
   const excluded = new Set(source.settings?.excludedChannels || []);
   const channels = (block.outputs || []).flatMap((output) =>
     (output.channels || [])
-      .map((channel) => ({ key: channelKey(output, channel.index), channel }))
+      .map((channel) => ({
+        key: channelKey(output, channel.index),
+        output,
+        channel,
+      }))
       .filter(({ key }) => !excluded.has(key))
   );
+
+  const isMapped = (output, channel) =>
+    Object.values(bindings || {}).some(
+      (binding) =>
+        binding?.mapping?.kind === "stream" &&
+        binding.mapping.sourceId === source.id &&
+        binding.mapping.output === outputKey(output) &&
+        binding.mapping.channel === channel.index
+    );
   const shown = showAll ? channels : channels.slice(0, OUTPUTS_SHOWN);
 
   return (
@@ -317,11 +332,27 @@ function DataSourceBlock({ source, api, canEdit, onRemove, onSettings }) {
           <div style={DIVIDER_STYLE} />
           <BlockSection title={t("outputs", "Outputs")}>
             <div style={CHIPS_STYLE}>
-              {shown.map(({ key, channel }) =>
-                streaming ? (
-                  <Chip key={key} label={channel.label} selected accent="tertiary" />
-                ) : (
+              {shown.map(({ key, output, channel }) =>
+                // Only numbers can drive a parameter, so a categorical output
+                // has no mapping to open.
+                output.valueType === "categorical" ? (
                   <Chip key={key} label={channel.label} variant="static" tone="neutral" />
+                ) : (
+                  <Chip
+                    key={key}
+                    label={channel.label}
+                    selected={isMapped(output, channel)}
+                    accent="tertiary"
+                    onClick={() =>
+                      openPanel({
+                        stream: {
+                          sourceId: source.id,
+                          output: outputKey(output),
+                          channel: channel.index,
+                        },
+                      })
+                    }
+                  />
                 )
               )}
               {channels.length > OUTPUTS_SHOWN ? (

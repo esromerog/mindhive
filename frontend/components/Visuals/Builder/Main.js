@@ -53,6 +53,7 @@ import DataSourcesPanel from "./Panels/DataSources";
 import ParametersPanel from "./Panels/Parameters";
 import ParameterDetailPanel from "./Panels/ParameterDetail";
 import DataSourceSettingsPanel from "./Panels/DataSourceSettings";
+import StreamMappingPanel from "./Panels/StreamMapping";
 import CodePanel from "./Panels/Code";
 import SettingsPanel from "./Panels/Settings";
 
@@ -518,6 +519,11 @@ export default function VisualBuilder({ query, user }) {
   const openPanel = useCallback((panel) => setDetailPanel(panel), []);
   const closePanel = useCallback(() => setDetailPanel(null), []);
 
+  // The detail panel belongs to the tab it was opened from: a parameter's
+  // mapping beside the Data Source list, or a stream's beside Parameters, would
+  // be pointing at something that is no longer on screen.
+  useEffect(() => setDetailPanel(null), [tab]);
+
   // ── Data sources ───────────────────────────────────────────────────────────
 
   const linkSource = useCallback(
@@ -756,7 +762,9 @@ export default function VisualBuilder({ query, user }) {
                       exit={{ flexGrow: 0, marginLeft: 0 }}
                       transition={COLLAPSE_TRANSITION}
                     >
-                      {detailPanel.sourceId ? (
+                      {detailPanel.stream ? (
+                        <StreamMappingPanel stream={detailPanel.stream} />
+                      ) : detailPanel.sourceId ? (
                         <DataSourceSettingsPanel sourceId={detailPanel.sourceId} />
                       ) : (
                         <ParameterDetailPanel
