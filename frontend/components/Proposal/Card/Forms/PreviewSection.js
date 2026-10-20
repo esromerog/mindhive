@@ -13,15 +13,29 @@ import { isPublishedToClassId } from "../../../Mutations/Resource";
 // tooltip or popover it sits in, so it never outgrows the title beside it.
 const TOOLTIP_LABEL_STYLE = { fontWeight: 600 };
 
-// Base chip layout (all chips)
+// Base chip layout (all chips): one row that shrinks to its container and
+// ellipsises the title, never wider than 320px.
 const CHIP_BASE_STYLES = {
   display: "flex",
+  flexDirection: "row",
+  alignItems: "center",
+  gap: "8px",
   padding: "6px 12px",
-  flexDirection: "column",
-  justifyContent: "center",
-  alignItems: "flex-start",
-  gap: "10px",
   borderRadius: "8px",
+  boxSizing: "border-box",
+  maxWidth: "min(320px, 100%)",
+  minWidth: 0,
+};
+
+// Chip title: takes the room left over and ellipsises, keeping a full line height.
+const CHIP_TITLE_STYLE = {
+  flex: "0 1 auto",
+  minWidth: 0,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  ...TYPO.label,
+  color: "#171717",
 };
 
 // Assignment chip styles (Disabled, Public, Completed)
@@ -74,10 +88,13 @@ const TASK_STYLES = {
 
 // Assignment chip (Disabled, Public, Completed states)
 // Teachers and mentors can click disabled (unpublished) chips; style stays greyed.
+// On a class template (edit mode) `completion` adds a "completed / total"
+// count of the template's students; the chip colour does not change.
 const AssignmentChip = ({
   item,
   index,
   homeworkStatusByAssignmentId,
+  completion: completionProp,
   t,
   openAssignmentModal,
   hoveredItemId,
@@ -103,13 +120,26 @@ const AssignmentChip = ({
   };
 
   const typeLabel = t("board.expendedCard.myAssignments", "Assignments");
-  const tooltipContent = isDisabled
-    ? t("board.expendedCard.assignmentNotPublished", "Not published")
-    : (
-        <>
-          <span style={TOOLTIP_LABEL_STYLE}>{typeLabel}:</span> {fullTitle}
-        </>
-      );
+  // No count until the template has students (avoids "0/0" while setting up).
+  const completion = completionProp?.total > 0 ? completionProp : null;
+  const completionLabel = completion
+    ? t(
+        "board.expendedCard.assignmentCompletion",
+        { completed: completion.completed, total: completion.total },
+        { default: "{{completed}} of {{total}} students completed" }
+      )
+    : null;
+  const tooltipContent = isDisabled ? (
+    <>
+      {t("board.expendedCard.assignmentNotPublished", "Not published")}
+      {completionLabel && <div>{completionLabel}</div>}
+    </>
+  ) : (
+    <>
+      <span style={TOOLTIP_LABEL_STYLE}>{typeLabel}:</span> {fullTitle}
+      {completionLabel && <div>{completionLabel}</div>}
+    </>
+  );
   const isHovered = hoveredItemId === item.id;
 
   return (
@@ -122,26 +152,33 @@ const AssignmentChip = ({
         style={{
           position: "relative",
           ...CHIP_BASE_STYLES,
-          flexDirection: "row",
-          alignItems: "center",
           ...chipStyle,
           cursor: canClick ? "pointer" : "not-allowed",
           transition: "box-shadow 0.2s ease",
           boxShadow: isHovered && canClick ? "0 2px 8px rgba(0,0,0,0.12)" : "none",
           ...TYPO.label,
           color: chipStyle.color || "#171717",
-          maxWidth: "320px",
-          minWidth: 0,
           opacity: isDisabled ? 0.55 : 1,
         }}
       >
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{fullTitle}</span>
+        <span style={CHIP_TITLE_STYLE}>{fullTitle}</span>
+        {completion && (
+          <span
+            aria-label={completionLabel}
+            style={{ flexShrink: 0, opacity: 0.7, whiteSpace: "nowrap" }}
+          >
+            {completion.completed}/{completion.total}
+          </span>
+        )}
       </div>
     </Tooltip>
   );
 };
 
 // Resource/Study chip (plain, border + box-shadow)
+// `notPublished` (class template edit mode): the resource is linked but not
+// published to the class, so students won't see it; greyed like an
+// unpublished assignment chip.
 const ResourceStudyChip = ({
   item,
   type,
@@ -150,6 +187,7 @@ const ResourceStudyChip = ({
   openResourceModal,
   hoveredItemId,
   setHoveredItemId,
+  notPublished = false,
 }) => {
   const fullTitle = stripHtml(item?.title) || "Untitled";
   const isHovered = hoveredItemId === item.id;
@@ -159,6 +197,15 @@ const ResourceStudyChip = ({
   const tooltipContent = (
     <>
       <span style={TOOLTIP_LABEL_STYLE}>{typeLabel}:</span> {fullTitle}
+      {notPublished && (
+        <div>
+          {t(
+            "board.expendedCard.resourceNotPublishedToClass",
+            {},
+            { default: "Not published to the class: students won't see it" }
+          )}
+        </div>
+      )}
     </>
   );
 
@@ -177,20 +224,18 @@ const ResourceStudyChip = ({
         style={{
           position: "relative",
           ...CHIP_BASE_STYLES,
-          flexDirection: "row",
-          alignItems: "center",
           ...RESOURCE_STUDY_STYLES,
           background: "#FFFFFF",
+          ...(notPublished ? ASSIGNMENT_STYLES.disabled : {}),
           color: "#171717",
           cursor: "pointer",
           transition: "box-shadow 0.2s ease",
           boxShadow: isHovered ? "0 2px 8px rgba(0,0,0,0.12)" : "none",
           ...TYPO.label,
-          maxWidth: "320px",
-          minWidth: 0,
+          opacity: notPublished ? 0.55 : 1,
         }}
       >
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, ...TYPO.label, color: "#171717" }}>{fullTitle}</span>
+        <span style={CHIP_TITLE_STYLE}>{fullTitle}</span>
       </div>
     </Tooltip>
   );
@@ -277,19 +322,15 @@ const TaskSurveyChip = ({
         style={{
           position: "relative",
           ...CHIP_BASE_STYLES,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: "8px",
           border: style.border,
           background: style.background,
           color: style.color,
           transition: "all 0.2s ease",
           boxShadow: isHovered ? "0 2px 8px rgba(0,0,0,0.12)" : "none",
           ...TYPO.label,
-          maxWidth: "320px",
-          minWidth: 0,
         }}
       >
+        {/* Star only: the title lives in the span beside it so it can shrink. */}
         <button
           type="button"
           onClick={handleStarClick}
@@ -298,9 +339,10 @@ const TaskSurveyChip = ({
           style={{
             display: "flex",
             alignItems: "center",
-            justifyContent: "left",
-            width: "fit-content",
-            gap: "8px",
+            justifyContent: "center",
+            // Parent board styles give every button `width: 100%`.
+            width: "auto",
+            maxWidth: "none",
             padding: 0,
             margin: 0,
             border: "none",
@@ -308,38 +350,16 @@ const TaskSurveyChip = ({
             cursor: canToggleFavorite ? "pointer" : "default",
             color: starColor,
             flexShrink: 0,
-            ...TYPO.label,
           }}
         >
-          <Icon name="star" style={{ margin: 0, height: "20px", width: "20px" }} />
-          <p
-            style={{
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              minWidth: 0,
-              width: "fit-content",
-              maxWidth: "100%",
-              ...TYPO.label,
-              color: "#171717",
-              margin: 0,
-            }}
-          >
-            {fullTitle}
-          </p>
+          <Icon name="star" style={{ margin: 0, fontSize: "16px", lineHeight: 1, height: "auto", width: "auto" }} />
         </button>
         <span
           role="button"
           tabIndex={0}
           onClick={handleTitleClick}
           onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleTitleClick(e); } }}
-          style={{
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            minWidth: 0,
-            cursor: "pointer",
-          }}
+          style={{ ...CHIP_TITLE_STYLE, color: style.color, cursor: "pointer" }}
         >
           {fullTitle}
         </span>
@@ -349,13 +369,14 @@ const TaskSurveyChip = ({
 };
 
 // Render chip by type
-const ChipByType = ({ item, type, index, t, openAssignmentModal, openResourceModal, homeworkStatusByAssignmentId, hoveredItemId, setHoveredItemId, user }) => {
+const ChipByType = ({ item, type, index, t, openAssignmentModal, openResourceModal, homeworkStatusByAssignmentId, completionByAssignmentId, hoveredItemId, setHoveredItemId, user, notPublished }) => {
   if (type === "assignment") {
     return (
       <AssignmentChip
         item={item}
         index={index}
         homeworkStatusByAssignmentId={homeworkStatusByAssignmentId}
+        completion={completionByAssignmentId?.[item?.id]}
         t={t}
         openAssignmentModal={openAssignmentModal}
         hoveredItemId={hoveredItemId}
@@ -385,6 +406,7 @@ const ChipByType = ({ item, type, index, t, openAssignmentModal, openResourceMod
       openResourceModal={openResourceModal}
       hoveredItemId={hoveredItemId}
       setHoveredItemId={setHoveredItemId}
+      notPublished={notPublished}
     />
   );
 };
@@ -405,12 +427,23 @@ export const PreviewSection = ({
   openResourceModal,
   user,
   homeworkStatusByAssignmentId,
+  completionByAssignmentId,
+  templateClassIds,
 }) => {
   const { t } = useTranslation("classes");
   const [hoveredItemId, setHoveredItemId] = useState(null);
 
+  // Student boards (classId): unpublished resources are hidden.
   const isPublishedToClass = (item) =>
     classId ? isPublishedToClassId(item?.settings, classId) : true;
+  // Class template boards (templateClassIds, edit mode): unpublished
+  // resources stay visible but greyed, so the teacher knows students won't
+  // see them — published means published to every class using the template.
+  const isUnpublishedOnTemplate = (item, itemType) =>
+    itemType === "resource" &&
+    !classId &&
+    (templateClassIds || []).length > 0 &&
+    !templateClassIds.every((id) => isPublishedToClassId(item?.settings, id));
   const filterItemsByType = (itemsToRender, itemType) => {
     const list = itemsToRender || [];
     if (itemType === "resource") return list.filter(isPublishedToClass);
@@ -428,9 +461,11 @@ export const PreviewSection = ({
         openAssignmentModal={openAssignmentModal}
         openResourceModal={openResourceModal}
         homeworkStatusByAssignmentId={homeworkStatusByAssignmentId}
+        completionByAssignmentId={completionByAssignmentId}
         hoveredItemId={hoveredItemId}
         setHoveredItemId={setHoveredItemId}
         user={user}
+        notPublished={isUnpublishedOnTemplate(item, itemType)}
       />
     ));
 

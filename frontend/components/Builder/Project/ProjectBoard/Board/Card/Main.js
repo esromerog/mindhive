@@ -14,19 +14,32 @@ import {
   UPDATE_HOMEWORK,
 } from "../../../../../Mutations/Homework"; // Adjust path as needed
 import {
-  GET_MY_HOMEWORKS_FOR_ASSIGNMENT,
-  GET_ALL_HOMEWORKS_FOR_ASSIGNMENT,
-  GET_MY_HOMEWORK_FOR_CARD_ASSIGNMENTS,
-  GET_ALL_HOMEWORK_FOR_CARD_ASSIGNMENTS,
+  GET_BOARD_STUDENT_MEMBERS,
+  GET_HOMEWORK_FOR_CARD_ASSIGNMENTS_BY_AUTHORS,
+  GET_HOMEWORKS_FOR_ASSIGNMENT_BY_AUTHORS,
 } from "../../../../../Queries/Homework";
 import { GET_AN_ASSIGNMENT } from "../../../../../Queries/Assignment"; // Adjust path as needed
 import { GET_RESOURCE } from "../../../../../Queries/Resource";
 
 import useForm from "../../../../../../lib/useForm";
+import { statusByAssignmentForAuthors } from "../../../../../../lib/assignmentCompletion";
 import {
   getBoardAssignableToStudents,
   getBoardStudentsCanAssignToCards,
 } from "../../../../../../lib/proposalBoardSettings";
+import { useBoardMilestones } from "../../../../../../lib/useBoardMilestones";
+import {
+  actionCardMatchesReviewStep,
+  cardIncludedInReviewStep,
+  isActionCard,
+  isStudyStatusMilestone,
+} from "../../../../../../lib/milestones";
+import { isMilestoneSubmitted } from "../../../../../../lib/milestoneStatus";
+import { listPreviousEntries } from "../../../../../../lib/cardPreviousEntries";
+import {
+  allowsStudentTaskSelection,
+  getTemplateLinkedTasks,
+} from "../../../../../../lib/studentTaskSelection";
 
 import Navigation from "./Navigation/Main";
 import SaveIndicator from "../SaveIndicator";
@@ -34,11 +47,16 @@ import { useCardCollabSession } from "../../../../../../lib/useCardCollabSession
 import { useCardHtmlAutosave } from "../../../../../../lib/useCardHtmlAutosave";
 import { useUnsavedChangesGuard } from "../../../../../../lib/useUnsavedChangesGuard";
 import Assigned from "./Forms/Assigned";
+import StudentTaskPicker from "./StudentTaskPicker";
 import TipTapEditor from "../../../../../TipTap/Main";
 import { PreviewSection } from "../../../../../Proposal/Card/Forms/PreviewSection";
 import { Modal, Icon } from "semantic-ui-react";
 import Button from "../../../../../DesignSystem/Button";
 import Chip from "../../../../../DesignSystem/Chip";
+import {
+  MilestoneCompletedIcon,
+  MilestoneIcon,
+} from "../../../../../DesignSystem/Icons";
 
 import { StyledProposal } from "../../../../../styles/StyledProposal";
 import { ReadOnlyTipTap } from "../../../../../TipTap/ReadOnlyTipTap";
@@ -56,9 +74,18 @@ export default function ProposalCard({
   refreshPage,
   isLocked,
   submitStatuses,
+  // Teacher preview from the template editor: render read-only with no
+  // collab session, card lock, or homework writes. Assignment clicks go to
+  // onOpenAssignment instead of the homework modal.
+  isPreview = false,
+  onOpenAssignment,
 }) {
   const { t } = useTranslation("builder");
-  const [originalActive, setOriginalActive] = useState(false); // For accordion state, default collapsed
+  const [openEntryKeys, setOpenEntryKeys] = useState([]); // Expanded previous entries, all collapsed by default
+  const toggleEntry = (key) =>
+    setOpenEntryKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
   const [assignmentModalOpen, setAssignmentModalOpen] = useState(false); // For assignment modal
   const [selectedAssignment, setSelectedAssignment] = useState(null); // For selected assignment
   const [resourceModalState, setResourceModalState] = useState({
@@ -120,12 +147,13 @@ export default function ProposalCard({
     : null;
   const session = useCardCollabSession({
     documentName: collabDocumentName,
-    active: true,
+    active: !isPreview,
   });
   const collabProvider = session.status === "synced" ? session.provider : null;
   // Editors stay read-only until Yjs (or, if the collab server is down, the
   // HTML columns) owns them, so nothing typed in between is dropped.
-  const editorsReady = !!collabProvider || session.status === "unavailable";
+  const editorsReady =
+    !isPreview && (!!collabProvider || session.status === "unavailable");
 
   // Everything on the card saves as it changes — there is no Save button.
   const {
@@ -144,6 +172,53 @@ export default function ProposalCard({
     bound: !!collabProvider,
   });
   useUnsavedChangesGuard(hasPendingSave);
+
+  // Milestones this card is submitted with, so the student knows where its
+  // content goes; a milestone already submitted reads as done. Only milestones
+  // with an action card on this board count: a card's settings can still name
+  // a step the board doesn't have.
+  const { milestones: boardMilestones } = useBoardMilestones(
+    proposal?.id || proposalId
+  );
+  const cardMilestones = useMemo(
+    () =>
+      (boardMilestones || [])
+        .filter((milestone) =>
+          cardIncludedInReviewStep(proposalCard, milestone?.key, boardMilestones)
+        )
+        .map((milestone) => {
+          // The milestone's own action card on this board, opened from the chip.
+          const actionCard = (proposal?.sections || [])
+            .flatMap((section) => section?.cards || [])
+            .find(
+              (card) =>
+                isActionCard(card) &&
+                ((milestone?.id && card?.milestone?.id === milestone.id) ||
+                  actionCardMatchesReviewStep(
+                    card,
+                    milestone?.key,
+                    boardMilestones
+                  ))
+            );
+          return {
+            milestone,
+            actionCardId: actionCard?.id ?? null,
+            // Data collection is done once the study is submitted (and with
+            // it locked); other milestones once the board submitted them.
+            completed: isStudyStatusMilestone(milestone)
+              ? proposal?.study?.dataCollectionStatus === "SUBMITTED"
+              : isMilestoneSubmitted(proposal, milestone, boardMilestones),
+          };
+        })
+        .filter(({ actionCardId }) => !!actionCardId),
+    [boardMilestones, proposalCard, proposal]
+  );
+  const previousEntries = useMemo(
+    () => listPreviousEntries({ ...proposalCard, content: values.content }, isLocked),
+    [proposalCard, values.content, isLocked]
+  );
+  // Preview never writes, even if an editor reports a change.
+  const updateField = isPreview ? () => {} : handleFieldUpdate;
   const collaborationUser = {
     id: user?.id || null,
     name:
@@ -170,33 +245,57 @@ export default function ProposalCard({
     ["TEACHER", "MENTOR"].includes(p?.name),
   );
 
+  // Whose homework the assignment chips and the assignment modal show. A
+  // student sees only their own. A teacher or mentor visiting a student board
+  // sees that board's students, i.e. what those students see — not everyone
+  // who ever answered the assignment (homework only links its assignment, so
+  // an unscoped query spans every class and past year). On a board with no
+  // students of its class (e.g. their own board) they see their own.
+  const boardMemberIds = [
+    ...new Set(
+      [proposal?.author?.id, ...(proposal?.collaborators || []).map((c) => c?.id)]
+        .filter(Boolean)
+    ),
+  ];
+  const boardClassId = proposal?.usedInClass?.id;
+  const lookUpBoardStudents =
+    isTeacherOrMentor && !!boardClassId && boardMemberIds.length > 0;
+  const { data: boardStudentsData } = useQuery(GET_BOARD_STUDENT_MEMBERS, {
+    variables: { memberIds: boardMemberIds, classId: boardClassId },
+    skip: !lookUpBoardStudents,
+  });
+  const boardStudentIds = (boardStudentsData?.profiles || []).map((p) => p.id);
+  const homeworkAuthorsReady = !lookUpBoardStudents || !!boardStudentsData;
+  const homeworkAuthorIds =
+    isTeacherOrMentor && boardStudentIds.length > 0
+      ? boardStudentIds
+      : user?.id
+        ? [user.id]
+        : [];
+  const homeworkAuthorsKey = homeworkAuthorIds.join(",");
+
   // Homework status per assignment for chip styling (homework belongs to assignment, not card)
   const assignmentIds = (inputs?.assignments || proposalCard?.assignments || [])
     .map((a) => a?.id)
     .filter(Boolean);
-  const { data: myCardHomeworkData } = useQuery(GET_MY_HOMEWORK_FOR_CARD_ASSIGNMENTS, {
-    variables: { userId: user?.id, assignmentIds },
-    skip: isTeacherOrMentor || !user?.id || assignmentIds.length === 0,
-  });
-  const { data: allCardHomeworkData } = useQuery(GET_ALL_HOMEWORK_FOR_CARD_ASSIGNMENTS, {
-    variables: { assignmentIds },
-    skip: !isTeacherOrMentor || assignmentIds.length === 0,
-  });
-  const cardHomeworks = isTeacherOrMentor
-    ? allCardHomeworkData?.homeworks || []
-    : myCardHomeworkData?.homeworks || [];
-  const homeworkStatusByAssignmentId = useMemo(() => {
-    const map = {};
-    cardHomeworks.forEach((hw) => {
-      const aid = hw?.assignment?.id;
-      if (aid && hw?.settings?.status) {
-        if (!map[aid] || hw.settings.status === "Completed") {
-          map[aid] = hw.settings.status;
-        }
-      }
-    });
-    return map;
-  }, [cardHomeworks]);
+  const { data: cardHomeworkData } = useQuery(
+    GET_HOMEWORK_FOR_CARD_ASSIGNMENTS_BY_AUTHORS,
+    {
+      variables: { assignmentIds, authorIds: homeworkAuthorIds },
+      skip:
+        !homeworkAuthorsReady ||
+        homeworkAuthorIds.length === 0 ||
+        assignmentIds.length === 0,
+    },
+  );
+  const homeworkStatusByAssignmentId = useMemo(
+    () =>
+      statusByAssignmentForAuthors(
+        cardHomeworkData?.homeworks,
+        homeworkAuthorsKey ? homeworkAuthorsKey.split(",") : [],
+      ),
+    [cardHomeworkData, homeworkAuthorsKey],
+  );
   const studentsCanAssignToCards = getBoardStudentsCanAssignToCards(
     proposal,
     proposal?.usedInClass
@@ -281,8 +380,34 @@ export default function ProposalCard({
     );
   };
 
+  // Student-picked tasks & surveys: saved with the teacher-linked tasks, and
+  // listed in settings.studentTaskIds so template propagation keeps them.
+  const showStudentTaskPicker = allowsStudentTaskSelection(proposalCard);
+  const linkedTasks = getTemplateLinkedTasks(inputs);
+  const handleStudentTasksChange = (picks) => {
+    const tasks = [...getTemplateLinkedTasks(inputs), ...picks];
+    const settings = {
+      ...inputs.settings,
+      studentTaskIds: picks.map((task) => task.id),
+    };
+    handleChange({ target: { name: "tasks", value: tasks } });
+    handleChange({ target: { name: "settings", value: settings } });
+    trackSave(() =>
+      saveCardFields({
+        variables: {
+          id: cardId,
+          input: {
+            tasks: { set: tasks.map((task) => ({ id: task.id })) },
+            settings: mergeCardSettings(proposalCard?.settings, settings),
+          },
+        },
+      }),
+    );
+  };
+
   // Send update to the server when the editor gains focus
   const handleFocus = async () => {
+    if (isPreview) return;
     // lock the card if needed
     if (!wasLockedOnFocus && areEditsAllowed && !lockedByUser) {
       await updateEdit({
@@ -300,7 +425,9 @@ export default function ProposalCard({
   };
 
   // Wait for outstanding saves, release the card, and go back to the board.
-  const handleBack = async () => {
+  // Leave this card for `query` (the board, or another card) once everything
+  // typed here is saved and the card is released.
+  const leaveCard = async (query) => {
     await flushAll();
     if (
       hasUnsavedChanges() &&
@@ -327,19 +454,22 @@ export default function ProposalCard({
       });
     }
 
-    // move to the project board
-    router.push({
-      pathname: `/builder/projects/`,
-      query: {
-        selector: proposalId,
-      },
-    });
+    router.push({ pathname: `/builder/projects/`, query });
   };
+
+  const handleBack = () => leaveCard({ selector: proposalId });
+
+  const openMilestoneCard = (actionCardId) =>
+    leaveCard({ selector: proposalId, card: actionCardId });
 
   // Handler to open assignment modal
   const openAssignmentModalHandler = (assignment) => {
     if (!assignment) {
       console.error("No assignment provided to openAssignmentModalHandler");
+      return;
+    }
+    if (isPreview) {
+      onOpenAssignment?.(assignment);
       return;
     }
     // console.log("Opening modal with assignment:", {
@@ -385,22 +515,23 @@ export default function ProposalCard({
     const assignment = assignmentData?.assignments?.[0] || null;
     // console.log(assignmentData);
 
-    // Query for existing homeworks: all for Mentor/Teacher, only own for others
-    const { data: myHomeworkData } = useQuery(GET_MY_HOMEWORKS_FOR_ASSIGNMENT, {
-      variables: { userId: user?.id, assignmentCode: assignment?.code },
-      skip: isMentorOrTeacher || !assignment?.code || !user?.id,
-    });
-    const { data: allHomeworkData } = useQuery(
-      GET_ALL_HOMEWORKS_FOR_ASSIGNMENT,
+    // Existing homeworks of the same authors as the chips (homeworkAuthorIds):
+    // the student's own, or the visited board's students for a teacher.
+    const { data: homeworkData } = useQuery(
+      GET_HOMEWORKS_FOR_ASSIGNMENT_BY_AUTHORS,
       {
-        variables: { assignmentCode: assignment?.code },
-        skip: !isMentorOrTeacher || !assignment?.code,
+        variables: {
+          assignmentCode: assignment?.code,
+          authorIds: homeworkAuthorIds,
+        },
+        skip:
+          !assignment?.code ||
+          !homeworkAuthorsReady ||
+          homeworkAuthorIds.length === 0,
       },
     );
 
-    const homeworks = isMentorOrTeacher
-      ? allHomeworkData?.homeworks || []
-      : myHomeworkData?.homeworks || [];
+    const homeworks = homeworkData?.homeworks || [];
 
     // New homework form state
     const { inputs, handleChange, handleMultipleUpdate, clearForm } = useForm({
@@ -427,20 +558,15 @@ export default function ProposalCard({
       {
         refetchQueries: [
           {
-            query: GET_MY_HOMEWORKS_FOR_ASSIGNMENT,
-            variables: { userId: user?.id, assignmentCode: assignment?.code },
+            query: GET_HOMEWORKS_FOR_ASSIGNMENT_BY_AUTHORS,
+            variables: {
+              assignmentCode: assignment?.code,
+              authorIds: homeworkAuthorIds,
+            },
           },
           {
-            query: GET_ALL_HOMEWORKS_FOR_ASSIGNMENT,
-            variables: { assignmentCode: assignment?.code },
-          },
-          {
-            query: GET_MY_HOMEWORK_FOR_CARD_ASSIGNMENTS,
-            variables: { userId: user?.id, assignmentIds },
-          },
-          {
-            query: GET_ALL_HOMEWORK_FOR_CARD_ASSIGNMENTS,
-            variables: { assignmentIds },
+            query: GET_HOMEWORK_FOR_CARD_ASSIGNMENTS_BY_AUTHORS,
+            variables: { assignmentIds, authorIds: homeworkAuthorIds },
           },
         ],
       },
@@ -452,20 +578,15 @@ export default function ProposalCard({
       {
         refetchQueries: [
           {
-            query: GET_MY_HOMEWORKS_FOR_ASSIGNMENT,
-            variables: { userId: user?.id, assignmentCode: assignment?.code },
+            query: GET_HOMEWORKS_FOR_ASSIGNMENT_BY_AUTHORS,
+            variables: {
+              assignmentCode: assignment?.code,
+              authorIds: homeworkAuthorIds,
+            },
           },
           {
-            query: GET_ALL_HOMEWORKS_FOR_ASSIGNMENT,
-            variables: { assignmentCode: assignment?.code },
-          },
-          {
-            query: GET_MY_HOMEWORK_FOR_CARD_ASSIGNMENTS,
-            variables: { userId: user?.id, assignmentIds },
-          },
-          {
-            query: GET_ALL_HOMEWORK_FOR_CARD_ASSIGNMENTS,
-            variables: { assignmentIds },
+            query: GET_HOMEWORK_FOR_CARD_ASSIGNMENTS_BY_AUTHORS,
+            variables: { assignmentIds, authorIds: homeworkAuthorIds },
           },
         ],
       },
@@ -1273,23 +1394,25 @@ export default function ProposalCard({
 
   return (
     <>
-      <Navigation
-        query={query}
-        user={user}
-        tab={tab}
-        proposalId={proposalId}
-        cardId={cardId}
-        onBack={handleBack}
-        inputs={inputs}
-        handleSettingsChange={handleSettingsChange}
-        saveIndicator={
-          <SaveIndicator
-            saveState={saveState}
-            connecting={session.status === "connecting"}
-            onRetry={retry}
-          />
-        }
-      />
+      {isPreview ? null : (
+        <Navigation
+          query={query}
+          user={user}
+          tab={tab}
+          proposalId={proposalId}
+          cardId={cardId}
+          onBack={handleBack}
+          inputs={inputs}
+          handleSettingsChange={handleSettingsChange}
+          saveIndicator={
+            <SaveIndicator
+              saveState={saveState}
+              connecting={session.status === "connecting"}
+              onRetry={retry}
+            />
+          }
+        />
+      )}
       <StyledProposal>
         <div className="post">
           <div className="proposalCardBoard">
@@ -1300,7 +1423,8 @@ export default function ProposalCard({
                   {ReactHtmlParser(inputs?.description)}
                 </div>
               </ReadOnlyTipTap>
-              {assignableToStudents &&
+              {!isPreview &&
+                assignableToStudents &&
                 (assignedCount > 0 || canAddAssignment) && (
                   <div>
                     <div className="cardSubheaderAssign" style={{ display: "flex", alignItems: "center", gap: "8px"}}>
@@ -1332,39 +1456,59 @@ export default function ProposalCard({
                     />
                   </div>
                 )}
-              {proposalCard?.settings?.includeInReport && (
+              {proposalCard?.settings?.includeInReport &&
+                previousEntries.length > 0 && (
+                <>
+                  <div className="cardSubheader">
+                    {t("mainCard.previousEntries", "Your previous entries")}
+                  </div>
+                  {previousEntries.map((entry) => {
+                    const open = openEntryKeys.includes(entry.key);
+                    const label = entry.isOriginal
+                      ? t("mainCard.originalEntry", "Your original entry")
+                      : entry.title;
+                    return (
+                      <div className="originalEntryBlock" key={entry.key}>
+                        <button
+                          type="button"
+                          className="originalEntryBlockHeader"
+                          onClick={() => toggleEntry(entry.key)}
+                          aria-expanded={open}
+                          aria-label={label}
+                        >
+                          <span>
+                            {label}
+                            {entry.submittedAt && (
+                              <span className="originalEntryBlockDate">
+                                {moment(entry.submittedAt).format("YYYY-MM-DD")}
+                              </span>
+                            )}
+                          </span>
+                          <span style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <img style={{ transform: `${open ? 'rotate(270deg)' : 'rotate(90deg)'}`,  width: "8px", height: "8px" }} src="/assets/icons/back.svg" alt={t("cardNavigation.back", "back")} />
+                            <img style={{ transform: `${open ? 'rotate(90deg)' : 'rotate(270deg)'}`,  width: "8px", height: "8px" }} src="/assets/icons/back.svg" alt={t("cardNavigation.back", "back")} />
+                          </span>
+                        </button>
+                        {open && (
+                          <div className="originalEntryBlockContent">
+                            <ReadOnlyTipTap>
+                              <div className="ProseMirror">
+                                {ReactHtmlParser(entry.content || "")}
+                              </div>
+                            </ReadOnlyTipTap>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+
+              {proposalCard?.settings?.includeInReport && !isLocked && (
                 <>
                   <div className="cardSubheader">
                     {t("mainCard.yourEntry", "Your entry")}
                   </div>
-                  {isLocked ? (
-                    <div className="originalEntryBlock">
-                      <button
-                        type="button"
-                        className="originalEntryBlockHeader"
-                        onClick={() => setOriginalActive(!originalActive)}
-                        aria-expanded={originalActive}
-                        aria-label={t("mainCard.expandOriginalEntry", "Expand to see your original entry")}
-                      >
-                        <span>{t("mainCard.expandOriginalEntry", "Expand to see your original entry")}</span>
-                        <span style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                          <img style={{ transform: `${originalActive ? 'rotate(270deg)' : 'rotate(90deg)'}`,  width: "8px", height: "8px" }} src="/assets/icons/back.svg" alt={t("cardNavigation.back", "back")} />
-                          <img style={{ transform: `${originalActive ? 'rotate(90deg)' : 'rotate(270deg)'}`,  width: "8px", height: "8px" }} src="/assets/icons/back.svg" alt={t("cardNavigation.back", "back")} />
-                          {/* <Icon name="chevron up" />
-                          <Icon name="chevron down" /> */}
-                        </span>
-                      </button>
-                      {originalActive && (
-                        <div className="originalEntryBlockContent">
-                          <ReadOnlyTipTap>
-                            <div className="ProseMirror">
-                              {ReactHtmlParser(values.content || "")}
-                            </div>
-                          </ReadOnlyTipTap>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
                     <div onFocus={handleFocus}>
                       <TipTapEditor
                         content={values.content}
@@ -1376,7 +1520,7 @@ export default function ProposalCard({
                         collaborationUser={collaborationUser}
                         isEditable={editorsReady}
                         onUpdate={(html, meta) =>
-                          handleFieldUpdate("content", html, meta)
+                          updateField("content", html, meta)
                         }
                         mediaLibraryId={
                           proposal?.id || proposalId
@@ -1391,7 +1535,6 @@ export default function ProposalCard({
                         }
                       />
                     </div>
-                  )}
                 </>
               )}
 
@@ -1411,7 +1554,7 @@ export default function ProposalCard({
                         collaborationUser={collaborationUser}
                         isEditable={editorsReady}
                         onUpdate={(html, meta) =>
-                          handleFieldUpdate("revisedContent", html, meta)
+                          updateField("revisedContent", html, meta)
                         }
                         mediaLibraryId={
                           proposal?.id || proposalId
@@ -1433,7 +1576,7 @@ export default function ProposalCard({
               {/* Display Linked Items: Assignments first, then combined Resources */}
               {(inputs?.assignments?.length > 0 ||
                 inputs?.resources?.length > 0 ||
-                inputs?.tasks?.length > 0 ||
+                linkedTasks.length > 0 ||
                 inputs?.studies?.length > 0) && (
                 <div className="linkedItemsSection">
                   {inputs?.assignments?.length > 0 && (
@@ -1449,7 +1592,7 @@ export default function ProposalCard({
                     />  
                   )}
                   {(inputs?.resources?.length > 0 ||
-                    inputs?.tasks?.length > 0 ||
+                    linkedTasks.length > 0 ||
                     inputs?.studies?.length > 0) && (
                     <PreviewSection
                       title={t("board.expendedCard.previewLinkedResources", "Linked Resources")}
@@ -1457,8 +1600,8 @@ export default function ProposalCard({
                         ...(inputs?.resources?.length > 0
                           ? [{ items: inputs.resources, type: "resource" }]
                           : []),
-                        ...(inputs?.tasks?.length > 0
-                          ? [{ items: inputs.tasks, type: "task" }]
+                        ...(linkedTasks.length > 0
+                          ? [{ items: linkedTasks, type: "task" }]
                           : []),
                         ...(inputs?.studies?.length > 0
                           ? [{ items: inputs.studies, type: "study" }]
@@ -1481,6 +1624,17 @@ export default function ProposalCard({
                 </div>
 
               )}
+              {showStudentTaskPicker && (
+                <StudentTaskPicker
+                  proposalCard={inputs}
+                  classId={proposal?.usedInClass?.id}
+                  user={user}
+                  // Submitted cards stay editable (the student revises them),
+                  // so only the teacher preview is read-only.
+                  disabled={isPreview}
+                  onChange={handleStudentTasksChange}
+                />
+              )}
               <div className="proposalCardComments">
                 <div className="cardSubheader">
                   {t("mainCard.comments", "Comments")}
@@ -1495,7 +1649,7 @@ export default function ProposalCard({
                   collaborationUser={collaborationUser}
                   isEditable={editorsReady}
                   onUpdate={(html, meta) =>
-                    handleFieldUpdate("comment", html, meta)
+                    updateField("comment", html, meta)
                   }
                   limitedToolbar={true}
                   mediaLibraryId={
@@ -1515,6 +1669,66 @@ export default function ProposalCard({
                   )}
                 />
               </div>
+              {cardMilestones.length > 0 ? (
+                <div
+                  className="proposalCardMilestones"
+                  style={{ display: "grid", gap: "8px", marginTop: "16px" }}
+                >
+                  <div className="cardSubheader">
+                    {t("mainCard.milestones", "Milestones")}
+                  </div>
+                  <div
+                    style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}
+                  >
+                    {cardMilestones.map(({ milestone, actionCardId, completed }) => {
+                      const open =
+                        !isPreview && actionCardId
+                          ? () => openMilestoneCard(actionCardId)
+                          : undefined;
+                      const icon = completed ? (
+                        <MilestoneCompletedIcon width={18} height={18} />
+                      ) : (
+                        <MilestoneIcon width={18} height={18} />
+                      );
+                      const label = milestone.title || milestone.key;
+                      if (!completed) {
+                        return (
+                          <Chip
+                            key={milestone.id || milestone.key}
+                            label={label}
+                            leading={icon}
+                            onClick={open}
+                          />
+                        );
+                      }
+                      // Completed: static look, but still opens the milestone.
+                      // Static chips ignore clicks, so a bare button carries it.
+                      const chip = (
+                        <Chip variant="static" tone="neutral" label={label} leading={icon} />
+                      );
+                      return open ? (
+                        <button
+                          key={milestone.id || milestone.key}
+                          type="button"
+                          onClick={open}
+                          style={{
+                            display: "inline-flex",
+                            margin: 0,
+                            padding: 0,
+                            border: "none",
+                            background: "none",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {chip}
+                        </button>
+                      ) : (
+                        <span key={milestone.id || milestone.key}>{chip}</span>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
               <Modal
                 open={resourceModalState.open}
                 onClose={closeResourceModalHandler}

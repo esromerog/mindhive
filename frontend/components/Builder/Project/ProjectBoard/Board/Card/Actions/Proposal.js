@@ -11,11 +11,17 @@ import { PROPOSAL_REVIEWS_QUERY } from "../../../../../../Queries/Proposal";
 import { CREATE_LOG } from "../../../../../../Mutations/Log";
 import {
   buildDualWriteUpdate,
+  buildSubmitStatuses,
   isMilestoneSubmitted,
   isOpenForComments,
   readMilestoneStatus,
 } from "../../../../../../../lib/milestoneStatus";
 import { useBoardMilestones } from "../../../../../../../lib/useBoardMilestones";
+import {
+  editableCardContent,
+  isCardLocked,
+  withPreviousEntry,
+} from "../../../../../../../lib/cardPreviousEntries";
 import {
   cardIncludedInReviewStep,
   milestoneHasReviewQuestionnaire,
@@ -44,6 +50,9 @@ export default function Proposal({
   proposal,
   cardId,
   proposalCard,
+  // Teacher preview from the template editor: render the student page
+  // read-only, without the student nav bar or any writes.
+  isPreview = false,
 }) {
   const { t } = useTranslation("builder");
 
@@ -104,17 +113,15 @@ export default function Proposal({
   const allCardsCompleted =
     cards?.filter((card) => card?.settings?.status !== "Completed").length ===
     0;
-  const isProposalSubmitted = isMilestoneSubmitted(
-    proposal,
-    milestone,
-    milestones
-  );
+  const isProposalSubmitted =
+    !isPreview && isMilestoneSubmitted(proposal, milestone, milestones);
   const isFeedbackLocked = !isOpenForComments(proposal, milestone, milestones);
 
   const { data } = useQuery(PROPOSAL_REVIEWS_QUERY, {
     variables: {
       id: proposal?.id,
     },
+    skip: isPreview,
   });
 
   const project = data?.proposalBoard || { sections: [] };
@@ -187,6 +194,32 @@ export default function Proposal({
           : card.settings,
       };
     });
+
+    // Keep a copy of each card's current entry, labeled with this
+    // milestone, under the card's "Your previous entries". Written before
+    // the board update so its refetch already carries the snapshots.
+    const submitStatuses = buildSubmitStatuses(proposal, milestones);
+    await Promise.all(
+      snapshotCards.map((card) => {
+        const sectionCards =
+          proposal?.sections?.find((section) =>
+            section?.cards?.some((c) => c?.id === card?.id)
+          )?.cards || [];
+        const locked = isCardLocked(card, sectionCards, submitStatuses);
+        return updateCardContent({
+          variables: {
+            id: card.id,
+            input: {
+              previousEntries: withPreviousEntry(
+                card,
+                milestone,
+                editableCardContent(card, locked)
+              ),
+            },
+          },
+        });
+      })
+    );
 
     const updateInput = buildDualWriteUpdate(
       milestone,
@@ -597,26 +630,28 @@ export default function Proposal({
 
   handleSaveCardRef.current = handleSaveCard;
 
-  const canEditCards = !isProposalSubmitted;
+  const canEditCards = !isPreview && !isProposalSubmitted;
   const hasReviewQuestionnaire = milestoneHasReviewQuestionnaire(milestone);
 
   return (
     <>
-      <Navigation
-        query={query}
-        user={user}
-        tab={tab}
-        proposalId={proposalId}
-        cardId={cardId}
-        saveBtnName={t("proposalAction.submitFor", { title: cardTypes[proposalCard?.type]?.title || previewTitle }, `Submit for ${cardTypes[proposalCard?.type]?.title || previewTitle}`)}
-        saveBtnFunction={() => {
-          submitProposal();
-        }}
-        allCardsCompleted={allCardsCompleted}
-        isProposalSubmitted={isProposalSubmitted}
-        switchFeedbackLock={switchFeedbackLock}
-        isFeedbackLocked={isFeedbackLocked}
-      />
+      {isPreview ? null : (
+        <Navigation
+          query={query}
+          user={user}
+          tab={tab}
+          proposalId={proposalId}
+          cardId={cardId}
+          saveBtnName={t("proposalAction.submitFor", { title: cardTypes[proposalCard?.type]?.title || previewTitle }, `Submit for ${cardTypes[proposalCard?.type]?.title || previewTitle}`)}
+          saveBtnFunction={() => {
+            submitProposal();
+          }}
+          allCardsCompleted={allCardsCompleted}
+          isProposalSubmitted={isProposalSubmitted}
+          switchFeedbackLock={switchFeedbackLock}
+          isFeedbackLocked={isFeedbackLocked}
+        />
+      )}
       <StyledActionPage>
         <div className="board">
           <div className="proposal">
@@ -644,21 +679,25 @@ export default function Proposal({
                     }}
                   >
                     <div className="cardTitle">
-                      <a
-                        href={
-                          (() => {
-                            // Get current URL as object
-                            const url = new URL(window.location.href);
-                            // Update or add the 'card' search param
-                            if (card?.id) {
-                              url.searchParams.set("card", card.id);
-                            }
-                            return url.pathname + url.search + url.hash;
-                          })()
-                        }
-                      >
-                        {card?.title}
-                      </a>
+                      {isPreview ? (
+                        card?.title
+                      ) : (
+                        <a
+                          href={
+                            (() => {
+                              // Get current URL as object
+                              const url = new URL(window.location.href);
+                              // Update or add the 'card' search param
+                              if (card?.id) {
+                                url.searchParams.set("card", card.id);
+                              }
+                              return url.pathname + url.search + url.hash;
+                            })()
+                          }
+                        >
+                          {card?.title}
+                        </a>
+                      )}
                     </div>
                     {canEditCards ? (
                       <div
@@ -704,7 +743,7 @@ export default function Proposal({
                         : card?.content || ""
                     }
                     collaboration={
-                      card?.id
+                      card?.id && !isPreview
                         ? {
                             documentName: `proposalCard:${card.id}`,
                             field: "content",
@@ -809,7 +848,7 @@ export default function Proposal({
 
                 <div className="lists">
                   {cards?.map((card) => (
-                    <div className="list">
+                    <div className="list" key={card?.id || card?.title}>
                       <div className="listIconTitle">
                         <img
                           src={`/assets/icons/status/${

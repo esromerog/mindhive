@@ -130,7 +130,11 @@ export const GET_CLASS_ASSIGNMENTS = gql`
         username
       }
       public
-      homework {
+      # Only this class's students: an assignment can be shared by several
+      # classes (and years), and homework only links its assignment.
+      homework(
+        where: { author: { studentIn: { some: { id: { equals: $classId } } } } }
+      ) {
         id
         public
         settings
@@ -247,6 +251,9 @@ export const GET_MY_ASSIGNMENTS = gql`
       content
       placeholder
       public
+      author {
+        id
+      }
       templateSource {
         id
         title
@@ -276,16 +283,6 @@ export const GET_AN_ASSIGNMENT = gql`
       author {
         id
       }
-      homework {
-        id
-        title
-        code
-        content
-        comment
-        updatedAt
-        settings
-        placeholder
-      }
       classes {
         id
       }
@@ -305,6 +302,44 @@ export const GET_BOARD_ASSIGNMENTS = gql`
     ) {
       id
       classes { id }
+    }
+  }
+`;
+
+// Assignments a teacher can link on a board card: the board's classes,
+// their own, and public templates (copy-only unless they own them).
+// TODO(class-networks): add assignments shared through the class's networks.
+export const GET_LINKABLE_ASSIGNMENTS = gql`
+  query GET_LINKABLE_ASSIGNMENTS($userId: ID!, $classIds: [ID!]) {
+    assignments(
+      where: {
+        OR: [
+          { isTemplate: { equals: true } }
+          { author: { id: { equals: $userId } } }
+          { classes: { some: { id: { in: $classIds } } } }
+        ]
+      }
+      orderBy: [{ createdAt: desc }]
+    ) {
+      id
+      title
+      content
+      placeholder
+      public
+      isTemplate
+      author {
+        id
+        username
+      }
+      templateSource {
+        id
+      }
+      classes {
+        id
+        title
+      }
+      createdAt
+      updatedAt
     }
   }
 `;

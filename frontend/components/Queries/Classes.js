@@ -84,6 +84,14 @@ export const GET_CLASS = gql`
       title
       description
       code
+      hiddenTasks {
+        id
+        public
+      }
+      hiddenStudies {
+        id
+        featured
+      }
       creator {
         id
         username
@@ -243,6 +251,9 @@ export const GET_STUDENTS_DASHBOARD_DATA = gql`
         projectReportStatus
         projectReportOpenForComments
         usedInClass {
+          id
+        }
+        clonedFrom {
           id
         }
         collaborators {

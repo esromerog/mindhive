@@ -35,10 +35,12 @@ export default function Dashboard({ children, area, selector }) {
   const { user, loading: authLoading } = useContext(UserContext);
   const router = useRouter();
   const showFooter = shouldShowDashboardFooter(area);
-  const boardEditorFullscreen =
+  // Focused workspaces that drop the content margin and fill the viewport;
+  // they manage their own scroll regions.
+  const fullBleed =
+    (area === "review" && selector === "project") ||
     (area === "myclasses" &&
-      router.query.action === "edit" &&
-      !!router.query.board) ||
+      (!!router.query.editBoard || router.query.createBoard === "1")) ||
     (area === "classes" &&
       router.query.page === "opportunities" &&
       (!!router.query.opportunity || !!router.query.round)) ||
@@ -49,7 +51,7 @@ export default function Dashboard({ children, area, selector }) {
   const content = (
     <StyledDashboardContent
       $withFooter={showFooter}
-      $boardEditorFullscreen={boardEditorFullscreen}
+      $fullBleed={fullBleed}
     >
       <div className="dashboardMain">{children}</div>
       {showFooter ? (

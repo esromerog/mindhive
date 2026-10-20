@@ -49,7 +49,7 @@ export const StyledProposal = styled.div`
 
   // Extra exclusions go inside :where() so they add no specificity; otherwise this
   // rule outranks nested button styles (e.g. ButtonGroup segments, .studyLinkChip).
-  button:not(.DesignSystem-Button):not(:where(.DesignSystem-DropdownSelect-trigger, .DesignSystem-DropdownSelect-option)) {
+  button:not(.DesignSystem-Button):not(:where(.DesignSystem-DropdownSelect-trigger, .DesignSystem-DropdownSelect-option, .DesignSystem-DropdownSelect-rowAction, .DesignSystem-DropdownMenu-item, .DesignSystem-InfoPopover-trigger)) {
     display: grid;
     align-content: center;
     max-width: 300px;
@@ -402,6 +402,10 @@ export const StyledProposal = styled.div`
       .boardInnerToolbarSelect {
         width: 320px;
       }
+      .boardInnerToolbarNote {
+        color: var(--MH-Theme-Neutrals-Dark, #6a6a6a);
+        white-space: nowrap;
+      }
     }
     .scrollable {
       flex: 1;
@@ -541,7 +545,9 @@ export const StyledProposal = styled.div`
     min-width: 0;
     height: 100%;
     margin: 0;
-    padding: ${(props) => (props.$cardFullView ? "0" : "20px")};
+    /* $flush: the class board editor sits on the dashboard inset itself. */
+    padding: ${(props) =>
+      props.$cardFullView || props.$flush ? "0" : "20px"};
     box-sizing: border-box;
     overflow: hidden;
   }
@@ -935,7 +941,7 @@ export const StyledProposal = styled.div`
       gap: 8px;
       cursor: pointer;
       transition: all 0.2s ease;
-      border: 1.5px solid;
+      border: 1px;
       white-space: nowrap;
       font-family: inherit;
       width: fit-content;
@@ -944,17 +950,17 @@ export const StyledProposal = styled.div`
         outline: none;
       }
       &.board {
-        background: #F9D978;
-        border-color: #5D5763;
+        background: #FDF2D0;
+        border-color: #F3F3F3;
         color: #171717;
         &:hover:not(:disabled) {
-          background: #F5D165;
+          background: #FDF2D0;
           border-color: #4A4550;
         }
       }
       &.list {
         background: #DEF8FB;
-        border-color: #336F8A;
+        border-color: #F3F3F3;
         color: #171717;
         width: max-content;
         max-width: 100%;
@@ -1594,6 +1600,9 @@ export const StyledProposal = styled.div`
       // box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
       overflow: hidden;
       width: 100%;
+      & + .originalEntryBlock {
+        margin-top: 8px;
+      }
       .originalEntryBlockHeader {
         display: flex;
         flex-direction: row;
@@ -1616,6 +1625,10 @@ export const StyledProposal = styled.div`
           outline: 2px solid var(--MH-Theme-Neutrals-Dark, #6a6a6a);
           outline-offset: 2px;
         }
+      }
+      .originalEntryBlockDate {
+        margin-left: 8px;
+        color: var(--MH-Theme-Neutrals-Dark, #6f6f6f);
       }
       .originalEntryBlockContent {
         padding: 16px;
@@ -1744,6 +1757,17 @@ export const StyledProposal = styled.div`
       &.infoBoardEdit {
         border-radius: 8px;
         border-top: 1px solid var(--MH-Theme-Neutrals-Light, #e6e6e6);
+
+        /* Settings rows below Linked Items: divider above, room between rows */
+        & > .proposalCardComments {
+          gap: 12px;
+          padding-top: 24px;
+          border-top: 1px solid var(--MH-Theme-Neutrals-Light, #e6e6e6);
+
+          .cardHeader {
+            margin-bottom: 0;
+          }
+        }
       }
 
       &.milestoneReviewFormPanel {

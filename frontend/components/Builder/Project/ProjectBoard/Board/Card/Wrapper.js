@@ -2,7 +2,12 @@ import { useQuery } from "@apollo/client";
 
 import { GET_CARD_CONTENT } from "../../../../../Queries/Proposal";
 import { buildSubmitStatuses } from "../../../../../../lib/milestoneStatus";
-import { resolveMilestoneFromCard, isActionCard } from "../../../../../../lib/milestones";
+import {
+  resolveMilestoneFromCard,
+  isActionCard,
+  isDataCollectionActionCard,
+} from "../../../../../../lib/milestones";
+import { isCardLocked } from "../../../../../../lib/cardPreviousEntries";
 import { useBoardMilestones } from "../../../../../../lib/useBoardMilestones";
 
 import ProposalCard from "./Main";
@@ -43,17 +48,11 @@ export default function CardWrapper({
     section?.cards?.map((c) => c?.id).includes(cardId)
   );
   const section = sectionsWithCard?.length && sectionsWithCard[0];
-  const actionCards = section?.cards?.filter((card) => isActionCard(card)) || [];
-  const firstAction = actionCards[0];
-  const submissionStage =
-    firstAction?.milestone?.key || firstAction?.type;
-  const submissionStatus =
-    submitStatuses[submissionStage] ||
-    (firstAction?.type && submitStatuses[firstAction.type]);
-  const isCardSubmitted = proposalCard?.settings?.includeInReviewSteps?.some(
-    (step) => submitStatuses[step] === "SUBMITTED"
+  const isLocked = isCardLocked(
+    proposalCard,
+    section?.cards || [],
+    submitStatuses
   );
-  const isLocked = submissionStatus === "SUBMITTED" || isCardSubmitted;
 
   // TODO also check whether the teacher/mentor is a teacher/mentor of the particular class
   const hasOverviewAccess =
@@ -62,10 +61,10 @@ export default function CardWrapper({
 
   if (proposalCard && Object.values(proposalCard).length) {
     const cardMilestone = resolveMilestoneFromCard(proposalCard, milestones);
-    const isCollectingData =
-      proposalCard?.type === "ACTION_COLLECTING_DATA" ||
-      cardMilestone?.actionCardType === "ACTION_COLLECTING_DATA" ||
-      cardMilestone?.key === "DATA_COLLECTION";
+    const isCollectingData = isDataCollectionActionCard(
+      proposalCard,
+      cardMilestone
+    );
 
     if (
       !proposalBuildMode &&

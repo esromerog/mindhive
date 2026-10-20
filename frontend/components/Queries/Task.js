@@ -12,6 +12,41 @@ export const ALL_PUBLIC_TASKS = gql`
   }
 `;
 
+// every public task, light: for a class's task visibility (block list) picker
+export const PUBLIC_TASKS_FOR_CLASS_VISIBILITY = gql`
+  query PUBLIC_TASKS_FOR_CLASS_VISIBILITY {
+    tasks(where: { public: { equals: true } }, orderBy: { title: asc }) {
+      id
+      title
+      i18nContent
+      taskType
+    }
+  }
+`;
+
+// public tasks and surveys a student may pick on a project card, plus the
+// board's class block list (filtered out client side)
+export const STUDENT_SELECTABLE_TASKS = gql`
+  query STUDENT_SELECTABLE_TASKS($classId: ID!, $skipClass: Boolean!) {
+    tasks(
+      where: { public: { equals: true }, taskType: { in: [TASK, SURVEY] } }
+      orderBy: { title: asc }
+    ) {
+      id
+      title
+      i18nContent
+      taskType
+      slug
+    }
+    class(where: { id: $classId }) @skip(if: $skipClass) {
+      id
+      hiddenTasks {
+        id
+      }
+    }
+  }
+`;
+
 // get public tasks
 export const PUBLIC_TASKS = gql`
   query PUBLIC_TASKS($where: TaskWhereInput!) {
@@ -23,6 +58,7 @@ export const PUBLIC_TASKS = gql`
       slug
       image
       public
+      featured
       description
       descriptionForParticipants
       author {
