@@ -31,7 +31,12 @@ import {
   normalizeDeclarations,
   retype,
 } from "../../Helpers/bindings";
-import { removeParameter, updateParameter } from "../../Runtime/parametersFile";
+import {
+  keyFromName,
+  removeParameter,
+  renameParameter,
+  updateParameter,
+} from "../../Runtime/parametersFile";
 import { ValueControl } from "./Parameters";
 import { StatusIndicator } from "../../../Studies/Run/DataSources/ConnectScreen";
 import { channelKey, outputKey } from "../../../../lib/yqOutputs";
@@ -218,15 +223,17 @@ function Section({ title, children, defaultOpen = true }) {
  * with the jump to the file. Everything below that line — normalize, range,
  * whether mapping is allowed at all — is data plumbing the dashboard owns.
  */
-export default function ParameterDetailPanel({ paramKey, initialTab }) {
+export default function ParameterDetailPanel({ paramKey, initialTab, focusName }) {
   const { t } = useTranslation("visuals");
   const {
     canEdit,
     declared,
     bindings,
     updateBinding,
+    renameBinding,
     files,
     updateFile,
+    openPanel,
     closePanel,
     revealFile,
     dataSources,
@@ -239,6 +246,9 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
   const parametersFile = files.find((file) => file.role === "parameters");
 
   const [tab, setTab] = useState(initialTab || "settings");
+  // The key this parameter was just saved under, while the sketch has yet to
+  // re-declare itself with it.
+  const [renamedTo, setRenamedTo] = useState(null);
   const [name, setName] = useState(labelFor(paramKey, declaration));
   // What the author has changed in the declaration and not yet saved: field →
   // value, in the form `updateParameter` takes. Empty until they touch the
@@ -291,11 +301,33 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
 
   // The parameter can vanish underneath this panel — deleted from the file, or
   // renamed in code, which is the same thing as far as the declared key goes.
+  // Renamed from here, the panel follows it to the key it now goes by.
   useEffect(() => {
-    if (!declaration) closePanel();
-  }, [declaration, closePanel]);
+    if (declaration) return;
+    if (renamedTo && declared?.[renamedTo]) {
+      openPanel({ paramKey: renamedTo, initialTab: tab });
+    } else {
+      closePanel();
+    }
+  }, [declaration, declared, renamedTo, tab, openPanel, closePanel]);
 
   if (!declaration) return null;
+
+  // Renaming spells a new key from the name, so a name that can't be spelled
+  // into one, or lands on a key already declared, can't be saved.
+  const trimmedName = name.trim();
+  const nextKey = trimmedName ? keyFromName(trimmedName) : paramKey;
+  const renaming = trimmedName !== labelFor(paramKey, declaration);
+  const nameError = !renaming
+    ? null
+    : !nextKey
+    ? t("nameNeedsLetter", "Start the name with a letter.")
+    : nextKey !== paramKey && nextKey in declared
+    ? t("nameTaken", "There is already a parameter called “{{key}}”.").replace(
+        "{{key}}",
+        nextKey
+      )
+    : null;
 
   function onKind(kind) {
     if (kind === kindOf(shown)) return;
@@ -313,13 +345,16 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
     };
 
     const declarationPatch = { ...fields };
-    if (name.trim() !== labelFor(paramKey, declaration)) {
-      declarationPatch.label = name.trim() || undefined;
-    }
-    const next = editable
+    if (renaming) declarationPatch.label = trimmedName || undefined;
+    let next = editable
       ? updateParameter(parametersFile.content || "", paramKey, declarationPatch)
       : null;
+    let savedKey = paramKey;
     if (next !== null && Object.keys(declarationPatch).length > 0) {
+      if (renaming && nextKey !== paramKey) {
+        next = renameParameter(next, paramKey, nextKey);
+        savedKey = nextKey;
+      }
       updateFile(parametersFile.id, next);
       // A value set by hand would keep winning over the default just changed,
       // and a stream can't feed a parameter retyped to something other than a
@@ -335,7 +370,11 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
       }
     }
 
-    updateBinding(paramKey, patch);
+    if (savedKey !== paramKey) {
+      renameBinding(paramKey, savedKey);
+      setRenamedTo(savedKey);
+    }
+    updateBinding(savedKey, patch);
   }
 
   function onDelete() {
@@ -398,6 +437,18 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
                   aria-label={t("name", "Name")}
                   value={name}
                   disabled={!editable}
+                  invalid={!!nameError}
+                  hint={
+                    nameError ||
+                    (renaming && nextKey !== paramKey
+                      ? t(
+                          "usedInCode",
+                          "Read in your sketch as yq.params.{{key}}"
+                        ).replace("{{key}}", nextKey)
+                      : undefined)
+                  }
+                  autoFocus={focusName}
+                  onFocus={focusName ? (event) => event.target.select() : undefined}
                   onChange={setName}
                 />
               </div>
@@ -562,7 +613,7 @@ export default function ParameterDetailPanel({ paramKey, initialTab }) {
             <Button
               variant="filled"
               tone="accent"
-              disabled={!canEdit}
+              disabled={!canEdit || !!nameError}
               onClick={onSave}
             >
               {t("save", "Save")}

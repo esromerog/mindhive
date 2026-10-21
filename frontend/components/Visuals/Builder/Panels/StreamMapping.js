@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import useTranslation from "next-translate/useTranslation";
 
 import Panel from "../Panel";
@@ -67,7 +67,8 @@ const ROW_ACTIONS_STYLE = {
  * same `mapping` on the parameter's binding. A parameter that already follows
  * a different stream is locked: its row carries that stream's chip, and a
  * message attached under it unmaps the parameter in place, after which it can
- * be ticked here. Rows are listed mapped here, then free, then locked.
+ * be ticked here. Rows are listed mapped here, then free, then locked, ranked
+ * when the panel opens and held there while it stays open.
  */
 export default function StreamMappingPanel({ stream }) {
   const { t } = useTranslation("visuals");
@@ -87,13 +88,6 @@ export default function StreamMappingPanel({ stream }) {
   );
   const channel = output?.channels?.find((entry) => entry.index === stream.channel);
 
-  // Unlinked, or filtered out in the source's settings, while this was open.
-  useEffect(() => {
-    if (!channel) closePanel();
-  }, [channel, closePanel]);
-
-  if (!source || !channel) return null;
-
   const isThis = (mapping) =>
     mapping?.kind === "stream" &&
     mapping.sourceId === stream.sourceId &&
@@ -101,14 +95,30 @@ export default function StreamMappingPanel({ stream }) {
     mapping.channel === stream.channel;
 
   // Mapped here first, then the free ones, then those held by another stream:
-  // what can be ticked stays above what has to be unmapped first.
-  const rank = (key) => {
-    const mapping = bindingFor(bindings, key).mapping;
-    return isThis(mapping) ? 0 : mapping?.kind === "stream" ? 2 : 1;
-  };
-  const keys = Object.keys(declared || {})
-    .filter((key) => isStreamMappable(declared[key], bindingFor(bindings, key)))
-    .sort((a, b) => rank(a) - rank(b));
+  // what can be ticked stays above what has to be unmapped first. Ranked only
+  // when the stream or the declared keys change, not on every toggle — a row
+  // that jumped on tick or Unmap would slide another under the cursor, and
+  // the next click would land on that one instead.
+  const declaredKeys = Object.keys(declared || {}).join("\n");
+  const order = useMemo(() => {
+    const rank = (key) => {
+      const mapping = bindingFor(bindings, key).mapping;
+      return isThis(mapping) ? 0 : mapping?.kind === "stream" ? 2 : 1;
+    };
+    return Object.keys(declared || {}).sort((a, b) => rank(a) - rank(b));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stream.sourceId, stream.output, stream.channel, declaredKeys]);
+
+  // Unlinked, or filtered out in the source's settings, while this was open.
+  useEffect(() => {
+    if (!channel) closePanel();
+  }, [channel, closePanel]);
+
+  if (!source || !channel) return null;
+
+  const keys = order.filter((key) =>
+    isStreamMappable(declared[key], bindingFor(bindings, key))
+  );
 
   function toggle(key, mapped) {
     updateBinding(key, {

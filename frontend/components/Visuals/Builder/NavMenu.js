@@ -200,10 +200,10 @@ const HIDE_SCROLLBAR_STYLE =
  * switching panels stays one click either way. An alternative to the
  * horizontal Navbar.
  *
- * @param {{ id: string, label: string, items: { id: string, label: string, labelKey?: string, description: string, icon: React.ReactNode }[] }[]} groups
+ * @param {{ id: string, label: string, items: { id: string, label: string, labelKey?: string, description: string, descriptionKey?: string, icon: React.ReactNode }[] }[]} groups
  *   Sections in order. A group's `id` is its heading's translation key; an
  *   item's is its label's (unless `labelKey` says otherwise), and
- *   `<id>Description` its description's.
+ *   `<id>Description` its description's (unless `descriptionKey` does).
  * @param {string} selected - The id of the panel being shown.
  * @param {boolean} collapsed - Shows the icon rail instead of the full menu.
  * @param {function} onSelect - Called with an item's id.
@@ -286,7 +286,10 @@ export default function NavMenu({
                         <span style={ITEM_TEXT_STYLE}>
                           <span style={ITEM_TITLE_STYLE}>{label}</span>
                           <span style={ITEM_DESCRIPTION_STYLE}>
-                            {t(`${item.id}Description`, item.description)}
+                            {t(
+                              item.descriptionKey || `${item.id}Description`,
+                              item.description
+                            )}
                           </span>
                         </span>
                       )}

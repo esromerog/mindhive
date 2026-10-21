@@ -30,11 +30,11 @@ const TITLE_STYLE = {
   color: "var(--MH-Theme-Neutrals-Black, #171717)",
 };
 
-// Fixed tracks like the Connect browse grid (ConnectCard caps at 368px), a
-// touch wider since a visual card carries a sketch cover.
+// Same fluid tracks as the task and survey banks: 300px minimum, columns
+// stretch to share the row.
 const GRID_STYLE = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 384px), 384px))",
+  gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))",
   gap: 16,
 };
 

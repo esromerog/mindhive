@@ -15,6 +15,14 @@ const PAGE_STYLE = {
   background: "var(--MH-Theme-Neutrals-White, #FFFFFF)",
 };
 
+// Under a host's own top bar there is no viewport to fill, only the space left.
+const EMBEDDED_PAGE_STYLE = {
+  ...PAGE_STYLE,
+  flex: "1 1 0%",
+  minHeight: 0,
+  overflowY: "auto",
+};
+
 const TOP_BAR_STYLE = {
   display: "flex",
   alignItems: "center",
@@ -277,6 +285,10 @@ const FOOTER_STYLE = {
  * the outputs it streams. Continue stays disabled until every source's
  * required inputs are connected — whether that's ever optional per-study is
  * still being worked out on the builder side.
+ *
+ * @param {boolean} [embedded=false] - The screen sits under the host's own top
+ *   bar (the visual viewer's), so it drops its logo bar and fills the space
+ *   that is left rather than the whole viewport.
  */
 export default function ConnectScreen({
   study,
@@ -288,15 +300,18 @@ export default function ConnectScreen({
   onLeave,
   heading = "This study will collect data from other devices",
   leaveLabel = "Leave the Study",
+  embedded = false,
 }) {
   return (
-    <div style={PAGE_STYLE}>
-      <div style={TOP_BAR_STYLE}>
-        <img src="/logo.png" alt="mindHIVE" height={28} />
-        <span className="MH-Type-Title-Base" style={{ color: "var(--MH-Theme-Neutrals-Black, #171717)" }}>
-          {study?.title}
-        </span>
-      </div>
+    <div style={embedded ? EMBEDDED_PAGE_STYLE : PAGE_STYLE}>
+      {embedded ? null : (
+        <div style={TOP_BAR_STYLE}>
+          <img src="/logo.png" alt="mindHIVE" height={28} />
+          <span className="MH-Type-Title-Base" style={{ color: "var(--MH-Theme-Neutrals-Black, #171717)" }}>
+            {study?.title}
+          </span>
+        </div>
+      )}
 
       <div style={BODY_STYLE}>
         <div style={COLUMN_STYLE}>

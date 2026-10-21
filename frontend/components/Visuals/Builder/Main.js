@@ -543,6 +543,16 @@ export default function VisualBuilder({ query, user }) {
     );
   }, []);
 
+  // A renamed parameter keeps its mapping and settings: the binding moves to
+  // the new key along with the declaration.
+  const renameBinding = useCallback((from, to) => {
+    setBindings((current) => {
+      const { [from]: moved, ...rest } = current;
+      return moved ? { ...rest, [to]: moved } : rest;
+    });
+    bindingsDirty.current = true;
+  }, []);
+
   // Whether the people a visual is shared with see its documentation at all.
   // Lives on the visual rather than in the Yjs room: it is a sharing decision,
   // not part of the text, and the Settings tab writes the same field.
@@ -704,6 +714,7 @@ export default function VisualBuilder({ query, user }) {
       declarationWarnings,
       bindings,
       updateBinding,
+      renameBinding,
       setDocsVisible,
       bus,
       dataSources,
@@ -737,6 +748,7 @@ export default function VisualBuilder({ query, user }) {
       declarationWarnings,
       bindings,
       updateBinding,
+      renameBinding,
       setDocsVisible,
       bus,
       dataSources,
@@ -783,14 +795,17 @@ export default function VisualBuilder({ query, user }) {
       <div className="Visuals-Builder" style={SHELL_STYLE}>
         <TopBar
           title={visual.title}
-          onShare={() => setShareOpen(true)}
           onBack={(event) => {
             // The link navigates on its own when there is nothing to lose.
             if (!settingsDirty) return;
             event.preventDefault();
             leaveUnlessDirty(() => router.push("/dashboard/develop/visuals"));
           }}
-        />
+        >
+          <Button variant="filled" onClick={() => setShareOpen(true)}>
+            {t("share", "Share")}
+          </Button>
+        </TopBar>
 
         {verticalNav ? null : (
           <Navbar style={NAVBAR_STYLE}>
@@ -848,8 +863,10 @@ export default function VisualBuilder({ query, user }) {
                         <DataSourceSettingsPanel sourceId={detailPanel.sourceId} />
                       ) : (
                         <ParameterDetailPanel
+                          key={detailPanel.paramKey}
                           paramKey={detailPanel.paramKey}
                           initialTab={detailPanel.initialTab}
+                          focusName={detailPanel.focusName}
                         />
                       )}
                     </motion.div>

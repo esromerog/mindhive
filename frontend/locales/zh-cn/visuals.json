@@ -185,7 +185,7 @@
 	"unlink": "取消关联",
 	"unlisted": "任何拥有链接的人",
 	"unmap": "取消映射",
-	"usedInCode": "在草图中通过 params.{{key}} 读取",
+	"usedInCode": "在草图中通过 yq.params.{{key}} 读取",
 	"value": "值",
 	"viewer": "查看者",
 	"visible": "可见",

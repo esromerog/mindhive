@@ -185,7 +185,7 @@
 	"unlink": "Dissocier",
 	"unlisted": "Toute personne disposant du lien",
 	"unmap": "Dissocier",
-	"usedInCode": "Lu dans votre sketch avec params.{{key}}",
+	"usedInCode": "Lu dans votre sketch avec yq.params.{{key}}",
 	"value": "Valeur",
 	"viewer": "Lecteur",
 	"visible": "Visible",

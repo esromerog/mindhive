@@ -185,7 +185,7 @@
 	"unlink": "Ontkoppelen",
 	"unlisted": "Iedereen met de link",
 	"unmap": "Koppeling opheffen",
-	"usedInCode": "In je sketch te lezen als params.{{key}}",
+	"usedInCode": "In je sketch te lezen als yq.params.{{key}}",
 	"value": "Waarde",
 	"viewer": "Lezer",
 	"visible": "Zichtbaar",

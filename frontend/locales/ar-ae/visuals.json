@@ -185,7 +185,7 @@
 	"unlink": "إلغاء الربط",
 	"unlisted": "أي شخص لديه الرابط",
 	"unmap": "إلغاء الربط",
-	"usedInCode": "يُقرأ في السكتش الخاص بك باسم params.{{key}}",
+	"usedInCode": "يُقرأ في السكتش الخاص بك باسم yq.params.{{key}}",
 	"value": "القيمة",
 	"viewer": "قارئ",
 	"visible": "ظاهر",

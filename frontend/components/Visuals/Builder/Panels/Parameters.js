@@ -11,7 +11,6 @@ import Chip from "../../../DesignSystem/Chip";
 import DropdownSelect from "../../../DesignSystem/DropdownSelect";
 import IconButton from "../../../DesignSystem/IconButton";
 import Input from "../../../DesignSystem/Input";
-import Modal from "../../../DesignSystem/Modal";
 import Slider from "../../../DesignSystem/Slider";
 import {
   AddIcon,
@@ -195,7 +194,9 @@ export default function ParametersPanel() {
   } = useVisualBuilder();
 
   const [expanded, setExpanded] = useState(null);
-  const [adding, setAdding] = useState(false);
+  // A parameter just written to the file, waiting for the sketch to declare it
+  // before its detail panel can open on it.
+  const [pendingKey, setPendingKey] = useState(null);
 
   const keys = Object.keys(declared || {});
   const unmapped = keys.filter((key) => !bindingFor(bindings, key).mapping);
@@ -215,7 +216,22 @@ export default function ParametersPanel() {
 
   const parametersFile = files.find((file) => file.role === "parameters");
 
-  function onAdd(name, key) {
+  useEffect(() => {
+    if (!pendingKey || !(pendingKey in (declared || {}))) return;
+    openPanel({ paramKey: pendingKey, initialTab: "settings", focusName: true });
+    setPendingKey(null);
+  }, [pendingKey, declared, openPanel]);
+
+  // Named in sequence — "New Parameter 1", "New Parameter 2" — and renamed from
+  // the detail panel it opens on.
+  function onAdd() {
+    let name;
+    let key;
+    for (let n = 1; ; n += 1) {
+      name = t("newParameterName", "New Parameter {{n}}").replace("{{n}}", n);
+      key = keyFromName(name);
+      if (!keys.includes(key)) break;
+    }
     updateFile(
       parametersFile.id,
       addParameter(parametersFile.content || "", key, {
@@ -226,7 +242,7 @@ export default function ParametersPanel() {
         max: 1,
       })
     );
-    setAdding(false);
+    setPendingKey(key);
   }
 
   return (
@@ -238,7 +254,7 @@ export default function ParametersPanel() {
             variant="filled"
             tone="accent"
             leadingIcon={<AddIcon />}
-            onClick={() => setAdding(true)}
+            onClick={onAdd}
             disabled={!parametersFile}
           >
             {t("addNew", "Add New")}
@@ -361,86 +377,7 @@ export default function ParametersPanel() {
           );
         })
       )}
-
-      <AddParameterModal
-        open={adding}
-        keys={keys}
-        onAdd={onAdd}
-        onClose={() => setAdding(false)}
-      />
     </Panel>
-  );
-}
-
-/**
- * Asks what a new parameter is called before anything is written. The name is
- * what the author calls it; the key the sketch reads it by is spelled from it,
- * and shown, so there is nothing left to rename in the code afterwards.
- */
-function AddParameterModal({ open, keys, onAdd, onClose }) {
-  const { t } = useTranslation("visuals");
-  const [name, setName] = useState("");
-
-  // Every opening starts empty rather than with the last name typed.
-  useEffect(() => {
-    if (open) setName("");
-  }, [open]);
-
-  const trimmed = name.trim();
-  const key = keyFromName(trimmed);
-  const error = !trimmed
-    ? null
-    : !key
-    ? t("nameNeedsLetter", "Start the name with a letter.")
-    : keys.includes(key)
-    ? t("nameTaken", "There is already a parameter called “{{key}}”.").replace(
-        "{{key}}",
-        key
-      )
-    : null;
-  const ready = !!key && !error;
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={t("addParameter", "Add Parameter")}
-      actions={
-        <>
-          <Button variant="text" onClick={onClose}>
-            {t("cancel", "Cancel")}
-          </Button>
-          <Button
-            variant="filled"
-            tone="accent"
-            disabled={!ready}
-            onClick={() => onAdd(trimmed, key)}
-          >
-            {t("add", "Add")}
-          </Button>
-        </>
-      }
-    >
-      <Input
-        label={t("name", "Name")}
-        autoFocus
-        value={name}
-        invalid={!!error}
-        hint={
-          error ||
-          (ready
-            ? t("usedInCode", "Read in your sketch as params.{{key}}").replace(
-                "{{key}}",
-                key
-              )
-            : undefined)
-        }
-        onChange={setName}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && ready) onAdd(trimmed, key);
-        }}
-      />
-    </Modal>
   );
 }
 

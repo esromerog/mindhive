@@ -99,7 +99,7 @@ const VECTOR_SIZES = { vector2: 2, vector3: 3 };
  * falling back silently is how a typo in `type` turns into a slider nobody
  * asked for.
  *
- * @param {Record<string, object>} raw - What the sketch passed to `declareParameters`.
+ * @param {Record<string, object>} raw - What the sketch passed to `yq.declareParameters`.
  * @returns {{ parameters: Record<string, object>, warnings: string[] }}
  */
 export function normalizeDeclarations(raw) {
