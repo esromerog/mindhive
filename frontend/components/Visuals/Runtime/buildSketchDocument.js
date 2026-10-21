@@ -34,9 +34,7 @@ yq.declareParameters({
 export const ENTRY_TEMPLATE = `
 
 // Hey! This is a normal p5-sketch with a few extras under "yq":
-//   yq.params.<name>       the live value of a parameter declared in code or in
-//                          the Parameters tab. Read it inside draw(): it updates
-//                          in place, so a copy taken in setup() goes stale.
+//   yq.params.<name>       the live value of a parameter.
 //   yq.sources             the linked data sources and whether each is connected.
 //   yq.sendEvent(label, v) used to send event markers.
 
